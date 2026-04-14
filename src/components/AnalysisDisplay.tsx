@@ -1,8 +1,10 @@
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle, FileSearch, Table } from "lucide-react";
+import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { AnalysisResult } from "@/types/pcr";
+import { generateDetailedAnalysisPDF, generatePatientSummaryPDF } from "@/lib/exportReports";
 
 interface AnalysisDisplayProps {
   result: AnalysisResult;
@@ -17,11 +19,58 @@ const sectionVariants = {
   }),
 };
 
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  new: "New",
+  discontinued: "Discontinued",
+  dose_change: "Dose Change",
+  frequency_change: "Freq Change",
+  route_change: "Route Change",
+};
+
 export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
   return (
     <div className="space-y-6">
-      {/* Recertification Analysis */}
+      {/* Download Buttons */}
       <motion.div custom={0} variants={sectionVariants} initial="hidden" animate="visible">
+        <div className="flex flex-wrap gap-3 justify-center">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => generateDetailedAnalysisPDF(result)}
+          >
+            <Download className="h-4 w-4" />
+            Download Detailed Analysis
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => generatePatientSummaryPDF(result)}
+          >
+            <Download className="h-4 w-4" />
+            Download Patient Summary
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Patient Summary */}
+      <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <User className="h-5 w-5 text-accent" />
+              Patient Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap font-body text-sm leading-relaxed">
+              {result.patientSummary}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Recertification Analysis */}
+      <motion.div custom={2} variants={sectionVariants} initial="hidden" animate="visible">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -38,7 +87,7 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
       </motion.div>
 
       {/* Chart Story Summary */}
-      <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={3} variants={sectionVariants} initial="hidden" animate="visible">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -54,8 +103,46 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
         </Card>
       </motion.div>
 
+      {/* Medication Changes */}
+      {result.medicationChanges && result.medicationChanges.length > 0 && (
+        <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Pill className="h-5 w-5 text-accent" />
+                Medication Changes
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {result.medicationChanges.length}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {result.medicationChanges.map((med, i) => (
+                  <div
+                    key={i}
+                    className="rounded-md bg-secondary/50 border border-border p-3"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold">{med.medication}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {CHANGE_TYPE_LABELS[med.changeType] || med.changeType}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{med.details}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Dx: {med.linkedDiagnosis} · Source: {med.sourceDocument}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       {/* Red Flags */}
-      <motion.div custom={2} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className={result.redFlags.length > 0 ? "border-flag/30" : ""}>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -99,7 +186,7 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
       </motion.div>
 
       {/* Source-to-Documentation Table */}
-      <motion.div custom={3} variants={sectionVariants} initial="hidden" animate="visible">
+      <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">

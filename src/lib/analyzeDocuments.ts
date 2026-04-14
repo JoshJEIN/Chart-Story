@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { AnalysisResult, RedFlag, SourceEntry } from "@/types/pcr";
+import { AnalysisResult, RedFlag, SourceEntry, MedicationChange } from "@/types/pcr";
 
 interface DocumentPayload {
   category: string;
@@ -16,16 +16,18 @@ export async function analyzeDocuments(
 
   if (error) throw new Error(error.message || "Analysis failed");
 
-  // Parse the tool call response
   const result = data as {
     recertificationAnalysis: string;
     chartStorySummary: string;
+    patientSummary: string;
     redFlags: RedFlag[];
+    medicationChanges: MedicationChange[];
     sourceTable: SourceEntry[];
   };
 
   return {
     ...result,
+    medicationChanges: result.medicationChanges || [],
     generatedAt: new Date(),
   };
 }
