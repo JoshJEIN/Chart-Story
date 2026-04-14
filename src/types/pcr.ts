@@ -30,10 +30,20 @@ export const CATEGORY_LABELS: Record<DocumentCategory, string> = {
   other: "Other Supporting Documents",
 };
 
+export interface MedicationChange {
+  medication: string;
+  changeType: "new" | "discontinued" | "dose_change" | "frequency_change" | "route_change";
+  details: string;
+  linkedDiagnosis: string;
+  sourceDocument: string;
+}
+
 export interface AnalysisResult {
   recertificationAnalysis: string;
   chartStorySummary: string;
+  patientSummary: string;
   redFlags: RedFlag[];
+  medicationChanges: MedicationChange[];
   sourceTable: SourceEntry[];
   generatedAt: Date;
 }
