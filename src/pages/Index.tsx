@@ -93,7 +93,25 @@ export default function Index() {
           </div>
 
           {/* Results */}
-          {analysisResult && <AnalysisDisplay result={analysisResult} />}
+          {analysisResult && (
+            <>
+              <AnalysisDisplay result={analysisResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => {
+                    setDocuments([]);
+                    setAnalysisResult(null);
+                  }}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  New Patient Review
+                </Button>
+              </div>
+            </>
+          )}
         </motion.div>
       </main>
     </div>
