@@ -265,7 +265,42 @@ serve(async (req) => {
       );
     }
 
-    const analysisResult = JSON.parse(toolCall.function.arguments);
+    const rawArgs: string = toolCall.function.arguments ?? "";
+    let analysisResult: Record<string, unknown>;
+    try {
+      analysisResult = JSON.parse(rawArgs);
+    } catch (parseErr) {
+      // Attempt to recover from truncated/invalid JSON from the model.
+      console.error("Initial JSON.parse failed, attempting recovery:", parseErr);
+      const recovered = recoverJson(rawArgs);
+      if (!recovered) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "AI response was truncated or malformed. Try fewer/smaller documents or re-run.",
+          }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      analysisResult = recovered;
+    }
+
+    // Ensure all expected fields exist so the client never silently drops a deliverable.
+    analysisResult.oasisPastHealthHistory =
+      typeof analysisResult.oasisPastHealthHistory === "string"
+        ? analysisResult.oasisPastHealthHistory
+        : "";
+    analysisResult.redFlags = Array.isArray(analysisResult.redFlags) ? analysisResult.redFlags : [];
+    analysisResult.medicationChanges = Array.isArray(analysisResult.medicationChanges)
+      ? analysisResult.medicationChanges
+      : [];
+    analysisResult.sourceTable = Array.isArray(analysisResult.sourceTable)
+      ? analysisResult.sourceTable
+      : [];
+
+    if (!analysisResult.oasisPastHealthHistory) {
+      console.warn("oasisPastHealthHistory missing from model output");
+    }
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
