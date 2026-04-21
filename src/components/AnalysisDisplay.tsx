@@ -1,10 +1,8 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, ClipboardList, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { AnalysisResult } from "@/types/pcr";
 import { generateDetailedAnalysisPDF, generatePatientSummaryPDF, generateOasisPastHealthHistoryPDF } from "@/lib/exportReports";
 
@@ -30,24 +28,6 @@ const CHANGE_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
-  const [generatingOasis, setGeneratingOasis] = useState(false);
-
-  const handleDownloadOasis = async () => {
-    if (generatingOasis) return;
-    setGeneratingOasis(true);
-    const toastId = toast.loading("Generating OASIS Past Health History…");
-    try {
-      // Yield to the browser so the spinner/toast paint before the (sync) work runs
-      await new Promise((r) => setTimeout(r, 50));
-      generateOasisPastHealthHistoryPDF(result);
-      toast.success("OASIS Past Health History downloaded", { id: toastId });
-    } catch (err) {
-      toast.error("Failed to generate OASIS Past Health History", { id: toastId });
-    } finally {
-      setGeneratingOasis(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Download Buttons */}
@@ -72,21 +52,11 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
           <Button
             variant="outline"
             className="gap-2"
-            onClick={handleDownloadOasis}
-            disabled={generatingOasis}
-            aria-busy={generatingOasis}
+            onClick={() => generateOasisPastHealthHistoryPDF(result)}
+            disabled={!result.oasisPastHealthHistory}
           >
-            {generatingOasis ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating OASIS Past Health History…
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Download OASIS Past Health History
-              </>
-            )}
+            <Download className="h-4 w-4" />
+            Download OASIS Past Health History
           </Button>
         </div>
       </motion.div>
