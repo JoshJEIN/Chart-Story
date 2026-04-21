@@ -213,6 +213,7 @@ serve(async (req) => {
                     "recertificationAnalysis",
                     "chartStorySummary",
                     "patientSummary",
+                    "oasisPastHealthHistory",
                     "redFlags",
                     "medicationChanges",
                     "sourceTable",
