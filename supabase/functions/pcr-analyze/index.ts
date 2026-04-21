@@ -122,6 +122,11 @@ serve(async (req) => {
                       description:
                         "Concise patient summary written in a detailed clinical narrative style. Must include: patient demographics, primary and secondary diagnoses, hospitalization history with dates, current medications linked to diagnoses, functional status, homebound justification, and why skilled nursing care is needed. Use dates, source document names, and clear diagnosis-to-medication linkage throughout. Example style: 'Pt is a [age]-year-old [gender] seen by [provider] on [date] for [reason]. Pt has a primary dx of [diagnosis]; other diagnoses include [list]. Pt continues to [current status]. Pt had [hospitalization/events]. Pt is homebound due to [reason]. HH/SN needed for [specific skilled needs].'",
                     },
+                    oasisPastHealthHistory: {
+                      type: "string",
+                      description:
+                        "OASIS-ready 'Significant Past Health History' summary. MUST follow the 4-paragraph audit-validated structure (core dx & major history; grouped comorbidities; clinical course & key events; functional impact & skilled need drivers). NO headings, NO bullets, NO audit notes — final clean narrative only, paragraphs separated by blank lines. Must pass all audit gates (clinical relevance, no banned filler phrases, prioritization, narrative quality, OASIS compliance) before being returned.",
+                    },
                     redFlags: {
                       type: "array",
                       description:
