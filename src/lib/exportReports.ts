@@ -114,6 +114,21 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
   downloadTextFile(lines.join("\n"), buildFilename("PCR_Patient_Summary", result));
 }
 
+export function generateOasisPastHealthHistoryPDF(result: AnalysisResult): void {
+  const lines: string[] = [];
+  const date = result.generatedAt.toLocaleDateString();
+
+  lines.push("OASIS — SIGNIFICANT PAST HEALTH HISTORY");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
+  lines.push(`Generated: ${date}`);
+  lines.push("=".repeat(70));
+  lines.push("");
+  lines.push(result.oasisPastHealthHistory || "No OASIS past health history generated.");
+
+  downloadTextFile(lines.join("\n"), buildFilename("OASIS_Past_Health_History", result));
+}
+
 function padRow(a: string, b: string, c: string, d: string): string {
   return `${a.substring(0, 30).padEnd(32)}${b.substring(0, 20).padEnd(22)}${c.padEnd(14)}${d}`;
 }
