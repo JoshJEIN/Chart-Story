@@ -13,6 +13,8 @@ export function generateDetailedAnalysisPDF(result: AnalysisResult): void {
   const date = result.generatedAt.toLocaleDateString();
 
   lines.push("PCR RECERTIFICATION ANALYSIS — DETAILED REPORT");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
   lines.push("");
@@ -76,6 +78,8 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
   const date = result.generatedAt.toLocaleDateString();
 
   lines.push("PATIENT SUMMARY — PCR RECERTIFICATION");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
   lines.push("");
