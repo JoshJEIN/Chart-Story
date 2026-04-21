@@ -25,6 +25,16 @@ export function generateDetailedAnalysisPDF(result: AnalysisResult): void {
   lines.push(result.recertificationAnalysis);
   lines.push("");
 
+  // OASIS — Significant Past Health History (audit-validated, embedded in detailed report)
+  lines.push("OASIS — SIGNIFICANT PAST HEALTH HISTORY");
+  lines.push("-".repeat(40));
+  lines.push(
+    result.oasisPastHealthHistory && result.oasisPastHealthHistory.trim().length > 0
+      ? result.oasisPastHealthHistory
+      : "Not generated. Re-run analysis if this section is required."
+  );
+  lines.push("");
+
   // Chart Story Summary
   lines.push("CHART STORY SUMMARY");
   lines.push("-".repeat(40));
