@@ -56,6 +56,42 @@ Explicitly reference in your analysis:
 - Medication changes with diagnosis linkage
 - Any changes within the latest 60-day episode and within 14 days after that episode when they affect recertification support.`;
 
+function recoverJson(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  let s = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  s = s.slice(start);
+  // Strip control chars
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  // Try as-is, then with trailing-comma fix, then by closing unbalanced braces/brackets/strings.
+  const attempts: string[] = [s, s.replace(/,\s*([}\]])/g, "$1")];
+  // Balance attempt
+  let balanced = attempts[1];
+  // Close an unterminated string
+  const quoteCount = (balanced.match(/(?<!\\)"/g) || []).length;
+  if (quoteCount % 2 === 1) balanced += '"';
+  let opens = 0, closes = 0, openB = 0, closeB = 0;
+  for (const ch of balanced) {
+    if (ch === "{") opens++;
+    else if (ch === "}") closes++;
+    else if (ch === "[") openB++;
+    else if (ch === "]") closeB++;
+  }
+  while (closeB < openB) { balanced += "]"; closeB++; }
+  while (closes < opens) { balanced += "}"; closes++; }
+  attempts.push(balanced);
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -93,6 +129,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-pro",
+          max_tokens: 16000,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userMessage },
@@ -265,7 +302,42 @@ serve(async (req) => {
       );
     }
 
-    const analysisResult = JSON.parse(toolCall.function.arguments);
+    const rawArgs: string = toolCall.function.arguments ?? "";
+    let analysisResult: Record<string, unknown>;
+    try {
+      analysisResult = JSON.parse(rawArgs);
+    } catch (parseErr) {
+      // Attempt to recover from truncated/invalid JSON from the model.
+      console.error("Initial JSON.parse failed, attempting recovery:", parseErr);
+      const recovered = recoverJson(rawArgs);
+      if (!recovered) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "AI response was truncated or malformed. Try fewer/smaller documents or re-run.",
+          }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      analysisResult = recovered;
+    }
+
+    // Ensure all expected fields exist so the client never silently drops a deliverable.
+    analysisResult.oasisPastHealthHistory =
+      typeof analysisResult.oasisPastHealthHistory === "string"
+        ? analysisResult.oasisPastHealthHistory
+        : "";
+    analysisResult.redFlags = Array.isArray(analysisResult.redFlags) ? analysisResult.redFlags : [];
+    analysisResult.medicationChanges = Array.isArray(analysisResult.medicationChanges)
+      ? analysisResult.medicationChanges
+      : [];
+    analysisResult.sourceTable = Array.isArray(analysisResult.sourceTable)
+      ? analysisResult.sourceTable
+      : [];
+
+    if (!analysisResult.oasisPastHealthHistory) {
+      console.warn("oasisPastHealthHistory missing from model output");
+    }
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
