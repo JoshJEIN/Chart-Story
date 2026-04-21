@@ -13,6 +13,8 @@ export function generateDetailedAnalysisPDF(result: AnalysisResult): void {
   const date = result.generatedAt.toLocaleDateString();
 
   lines.push("PCR RECERTIFICATION ANALYSIS — DETAILED REPORT");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
   lines.push("");
@@ -68,7 +70,7 @@ export function generateDetailedAnalysisPDF(result: AnalysisResult): void {
     lines.push(padRow(entry.finding, entry.sourceDocument, entry.date, entry.category));
   });
 
-  downloadTextFile(lines.join("\n"), `PCR_Detailed_Analysis_${formatFileDate(result.generatedAt)}.txt`);
+  downloadTextFile(lines.join("\n"), buildFilename("PCR_Detailed_Analysis", result));
 }
 
 export function generatePatientSummaryPDF(result: AnalysisResult): void {
@@ -76,6 +78,8 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
   const date = result.generatedAt.toLocaleDateString();
 
   lines.push("PATIENT SUMMARY — PCR RECERTIFICATION");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
   lines.push("");
@@ -107,7 +111,7 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
     lines.push("");
   }
 
-  downloadTextFile(lines.join("\n"), `PCR_Patient_Summary_${formatFileDate(result.generatedAt)}.txt`);
+  downloadTextFile(lines.join("\n"), buildFilename("PCR_Patient_Summary", result));
 }
 
 function padRow(a: string, b: string, c: string, d: string): string {
@@ -116,6 +120,17 @@ function padRow(a: string, b: string, c: string, d: string): string {
 
 function formatFileDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function sanitizeForFilename(s: string): string {
+  return (s || "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "Unknown";
+}
+
+function buildFilename(prefix: string, result: AnalysisResult): string {
+  const pt = sanitizeForFilename(result.patientIdentifier || "Unknown_Pt");
+  const ep = sanitizeForFilename(result.episodeRange || "Episode_Unknown");
+  const gen = formatFileDate(result.generatedAt);
+  return `${prefix}_${pt}_${ep}_generated_${gen}.txt`;
 }
 
 function downloadTextFile(content: string, filename: string) {

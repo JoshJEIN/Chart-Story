@@ -23,11 +23,15 @@ export async function analyzeDocuments(
     redFlags: RedFlag[];
     medicationChanges: MedicationChange[];
     sourceTable: SourceEntry[];
+    patientIdentifier?: string;
+    episodeRange?: string;
   };
 
   return {
     ...result,
     medicationChanges: result.medicationChanges || [],
+    patientIdentifier: result.patientIdentifier || "Unknown_Pt",
+    episodeRange: result.episodeRange || "Episode_Unknown",
     generatedAt: new Date(),
   };
 }
