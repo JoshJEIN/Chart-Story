@@ -20,6 +20,7 @@ export async function analyzeDocuments(
     recertificationAnalysis: string;
     chartStorySummary: string;
     patientSummary: string;
+    oasisPastHealthHistory: string;
     redFlags: RedFlag[];
     medicationChanges: MedicationChange[];
     sourceTable: SourceEntry[];
@@ -30,6 +31,7 @@ export async function analyzeDocuments(
   return {
     ...result,
     medicationChanges: result.medicationChanges || [],
+    oasisPastHealthHistory: result.oasisPastHealthHistory || "",
     patientIdentifier: result.patientIdentifier || "Unknown_Pt",
     episodeRange: result.episodeRange || "Episode_Unknown",
     generatedAt: new Date(),
