@@ -53,7 +53,6 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
             variant="outline"
             className="gap-2"
             onClick={() => generateOasisPastHealthHistoryPDF(result)}
-            disabled={!result.oasisPastHealthHistory}
           >
             <Download className="h-4 w-4" />
             Download OASIS Past Health History
