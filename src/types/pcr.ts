@@ -45,6 +45,8 @@ export interface AnalysisResult {
   redFlags: RedFlag[];
   medicationChanges: MedicationChange[];
   sourceTable: SourceEntry[];
+  patientIdentifier: string;
+  episodeRange: string;
   generatedAt: Date;
 }
 

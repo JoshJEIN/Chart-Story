@@ -179,6 +179,16 @@ serve(async (req) => {
                         additionalProperties: false,
                       },
                     },
+                    patientIdentifier: {
+                      type: "string",
+                      description:
+                        "HIPAA-compliant patient identifier for filenames. Use patient initials only (e.g., 'JD' for John Doe) extracted from the documents. If no name is found, use 'Unknown_Pt'. Must be safe for filenames (letters, numbers, underscores only — no spaces or special characters).",
+                    },
+                    episodeRange: {
+                      type: "string",
+                      description:
+                        "The most recent 60-day episode date range analyzed, formatted for filenames as 'YYYY-MM-DD_to_YYYY-MM-DD' (e.g., '2024-08-01_to_2024-09-29'). Extract from the OASIS, POC, or certification period in the documents. If dates cannot be determined, use 'Episode_Unknown'.",
+                    },
                   },
                   required: [
                     "recertificationAnalysis",
@@ -187,6 +197,8 @@ serve(async (req) => {
                     "redFlags",
                     "medicationChanges",
                     "sourceTable",
+                    "patientIdentifier",
+                    "episodeRange",
                   ],
                   additionalProperties: false,
                 },
