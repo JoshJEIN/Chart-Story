@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, ClipboardList } from "lucide-react";
+import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, ClipboardList, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { AnalysisResult } from "@/types/pcr";
 import { generateDetailedAnalysisPDF, generatePatientSummaryPDF, generateOasisPastHealthHistoryPDF } from "@/lib/exportReports";
 
