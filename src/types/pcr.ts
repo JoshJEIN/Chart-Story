@@ -42,6 +42,7 @@ export interface AnalysisResult {
   recertificationAnalysis: string;
   chartStorySummary: string;
   patientSummary: string;
+  significantPastHealthHistory: string;
   redFlags: RedFlag[];
   medicationChanges: MedicationChange[];
   sourceTable: SourceEntry[];
