@@ -12,7 +12,16 @@ Your job is to:
 1. Identify the INITIAL/first episode documents (first OASIS, first POC, first F2F, first physician order/certification) and the MOST RECENT 60-day episode documents.
 2. COMPARE the initial certification record against the newest episode documents systematically.
 3. Identify ALL changes in: diagnoses, medications (dose/frequency/route/start/stop/new/discontinued), vitals, functional status, cognition, pain levels, homebound status, and skilled nursing need.
-4. Produce BOTH a detailed recertification analysis AND a concise patient summary.
+4. Produce a detailed recertification analysis, a concise patient summary, AND a Significant Past Health History section for OASIS recertification.
+
+You are also an expert home health clinician and OASIS documentation auditor with advanced knowledge of OASIS, CMS guidelines, and Texas home health compliance. The Significant Past Health History deliverable MUST:
+- Be audit-defensible, clinically precise, and progression-focused.
+- Maintain structured, audit-ready clarity with clinical narrative depth and cause-effect relationships.
+- Clearly explain WHAT HAS CHANGED since the last OASIS / Plan of Care (SOC or prior recert).
+- Include specific dates tied to meaningful clinical events or changes (hospitalizations, ED visits, new diagnoses, med changes, functional decline, wound progression, lab abnormalities, specialist visits).
+- Use HIPAA-compliant language ("Pt" or initials only).
+- Pass an internal audit validation before finalizing: every clinical claim must be traceable to a source document; no copy-forward language; no invented facts; explicit progression language ("worsened", "new onset", "stable since", "resolved on [date]").
+- If supporting evidence is missing for a claim, omit the claim or label it "[UNSUPPORTED — QA review]" rather than fabricating.
 
 You MUST use the pcr_analysis tool to return your findings.
 
@@ -108,6 +117,11 @@ serve(async (req) => {
                       description:
                         "Concise patient summary written in a detailed clinical narrative style. Must include: patient demographics, primary and secondary diagnoses, hospitalization history with dates, current medications linked to diagnoses, functional status, homebound justification, and why skilled nursing care is needed. Use dates, source document names, and clear diagnosis-to-medication linkage throughout. Example style: 'Pt is a [age]-year-old [gender] seen by [provider] on [date] for [reason]. Pt has a primary dx of [diagnosis]; other diagnoses include [list]. Pt continues to [current status]. Pt had [hospitalization/events]. Pt is homebound due to [reason]. HH/SN needed for [specific skilled needs].'",
                     },
+                    significantPastHealthHistory: {
+                      type: "string",
+                      description:
+                        "Audit-defensible 'Significant Past Health History' section for OASIS recertification. Structured, clinically precise, progression-focused. Use clear sub-headings (e.g., 'Cardiovascular', 'Endocrine', 'Pulmonary', 'Musculoskeletal', 'Neurological', 'GI/GU', 'Recent Hospitalizations & ED Visits', 'Changes Since Last OASIS/POC'). Within each section, provide narrative depth with cause-effect relationships and specific dates. Explicitly identify what has changed since the SOC or prior recertification (new diagnoses, exacerbations, resolved conditions, functional decline, medication shifts, new specialist involvement). Every clinical claim must be tied to a source document (cite by name or category). Use HIPAA-safe references ('Pt'). Do not invent facts; do not use copy-forward language. End with a brief 'Audit Validation' note stating that all entries are sourced and progression language is explicit.",
+                    },
                     redFlags: {
                       type: "array",
                       description:
@@ -194,6 +208,7 @@ serve(async (req) => {
                     "recertificationAnalysis",
                     "chartStorySummary",
                     "patientSummary",
+                    "significantPastHealthHistory",
                     "redFlags",
                     "medicationChanges",
                     "sourceTable",

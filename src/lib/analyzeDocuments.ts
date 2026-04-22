@@ -20,6 +20,7 @@ export async function analyzeDocuments(
     recertificationAnalysis: string;
     chartStorySummary: string;
     patientSummary: string;
+    significantPastHealthHistory?: string;
     redFlags: RedFlag[];
     medicationChanges: MedicationChange[];
     sourceTable: SourceEntry[];
@@ -29,6 +30,7 @@ export async function analyzeDocuments(
 
   return {
     ...result,
+    significantPastHealthHistory: result.significantPastHealthHistory || "",
     medicationChanges: result.medicationChanges || [],
     patientIdentifier: result.patientIdentifier || "Unknown_Pt",
     episodeRange: result.episodeRange || "Episode_Unknown",

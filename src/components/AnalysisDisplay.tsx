@@ -1,10 +1,14 @@
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User } from "lucide-react";
+import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, History } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalysisResult } from "@/types/pcr";
-import { generateDetailedAnalysisPDF, generatePatientSummaryPDF } from "@/lib/exportReports";
+import {
+  generateDetailedAnalysisPDF,
+  generatePatientSummaryPDF,
+  generateSignificantPastHealthHistoryPDF,
+} from "@/lib/exportReports";
 
 interface AnalysisDisplayProps {
   result: AnalysisResult;
@@ -49,8 +53,36 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
             <Download className="h-4 w-4" />
             Download Patient Summary
           </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => generateSignificantPastHealthHistoryPDF(result)}
+            disabled={!result.significantPastHealthHistory}
+          >
+            <Download className="h-4 w-4" />
+            Download Significant Past Health History
+          </Button>
         </div>
       </motion.div>
+
+      {/* Significant Past Health History */}
+      {result.significantPastHealthHistory && (
+        <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="h-5 w-5 text-accent" />
+                Significant Past Health History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap font-body text-sm leading-relaxed">
+                {result.significantPastHealthHistory}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Patient Summary */}
       <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
