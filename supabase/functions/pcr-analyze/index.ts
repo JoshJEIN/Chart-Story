@@ -178,7 +178,7 @@ serve(async (req) => {
                     oasisPastHealthHistory: {
                       type: "string",
                       description:
-                        "OASIS-ready 'Significant Past Health History' summary. MUST follow the 4-paragraph audit-validated structure (core dx & major history; grouped comorbidities; clinical course & key events; functional impact & skilled need drivers). NO headings, NO bullets, NO audit notes — final clean narrative only, paragraphs separated by blank lines. Must pass all audit gates (clinical relevance, no banned filler phrases, prioritization, narrative quality, OASIS compliance) before being returned.",
+                        "OASIS-ready 'Significant Past Health History' summary. MUST exactly mirror the GOLD-STANDARD EXEMPLAR provided in the system prompt: 7-block flow (one-line opener; primary oncologic/high-risk dx with surgery dates and treatment burden; comorbidities grouped by system; polypharmacy + active pharmacologic management; recent diagnostic findings + deconditioning; homebound + functional limitations; closing 'overall clinical status' justifying skilled nursing). Use **markdown bold** to highlight high-risk dx, surgery dates, instability, treatment burden, 'homebound', 'decline in ADLs', 'high medical complexity', 'significant polypharmacy', and recent diagnostic findings — exactly as the exemplar does. Include hard data points (exact dates, drug names, vitals trends, treatment counts, pain scales). NO headings, NO bullets, NO audit notes, NO preamble. Paragraphs separated by blank lines. Must pass all audit gates before emission.",
                     },
                     redFlags: {
                       type: "array",
