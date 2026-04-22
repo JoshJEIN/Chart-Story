@@ -42,7 +42,6 @@ export interface AnalysisResult {
   recertificationAnalysis: string;
   chartStorySummary: string;
   patientSummary: string;
-  oasisPastHealthHistory: string;
   redFlags: RedFlag[];
   medicationChanges: MedicationChange[];
   sourceTable: SourceEntry[];
