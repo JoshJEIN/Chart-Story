@@ -38,6 +38,18 @@ export interface MedicationChange {
   sourceDocument: string;
 }
 
+export interface AuditFailure {
+  criterion: string;
+  reason: string;
+}
+
+export interface AuditMeta {
+  iterations: number;
+  maxIterations: number;
+  finalAuditPass: boolean;
+  remainingFailures: AuditFailure[];
+}
+
 export interface AnalysisResult {
   recertificationAnalysis: string;
   chartStorySummary: string;
@@ -49,6 +61,9 @@ export interface AnalysisResult {
   patientIdentifier: string;
   episodeRange: string;
   generatedAt: Date;
+  auditPass?: boolean;
+  auditFailures?: AuditFailure[];
+  auditMeta?: AuditMeta;
 }
 
 export interface RedFlag {
