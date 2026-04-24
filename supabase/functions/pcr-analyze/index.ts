@@ -168,9 +168,15 @@ serve(async (req) => {
   }
 
   try {
-    const { documents } = await req.json();
+    const body = await req.json();
+    const { documents, maxIterations } = body ?? {};
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    // Allow tests to inject a stub AI gateway endpoint
+    const AI_GATEWAY_URL =
+      Deno.env.get("AI_GATEWAY_URL") ??
+      "https://ai.gateway.lovable.dev/v1/chat/completions";
 
     if (!documents || !Array.isArray(documents) || documents.length === 0) {
       return new Response(
