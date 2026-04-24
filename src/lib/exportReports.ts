@@ -117,30 +117,74 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
 export function generateSignificantPastHealthHistoryPDF(result: AnalysisResult): void {
   const lines: string[] = [];
   const date = result.generatedAt.toLocaleDateString();
+  const MAJOR = "=".repeat(70);
+  const MINOR = "-".repeat(70);
 
-  // Header (minimal — no decorative bullets/separators in the body)
+  // Header with decorative separators
+  lines.push(MAJOR);
   lines.push("SIGNIFICANT PAST HEALTH HISTORY — OASIS RECERTIFICATION");
+  lines.push(MAJOR);
   lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
   lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
+  lines.push(MAJOR);
   lines.push("");
 
-  // The narrative — clinically sound, chronologically intelligent,
-  // audit-defensible. No bullets, no list markers.
+  // Significant Past Health History narrative
+  lines.push("SIGNIFICANT PAST HEALTH HISTORY");
+  lines.push(MINOR);
   const body =
     result.significantPastHealthHistory ||
     "No significant past health history was generated. Please re-run analysis.";
   lines.push(stripBullets(body));
   lines.push("");
 
-  // Brief audit notes (compact, no bulleted lists)
+  // Patient Summary
+  lines.push(MAJOR);
+  lines.push("PATIENT SUMMARY");
+  lines.push(MINOR);
+  lines.push(stripBullets(result.patientSummary || "(none)"));
+  lines.push("");
+
+  // Chart Story
+  lines.push(MAJOR);
+  lines.push("CHART STORY SUMMARY");
+  lines.push(MINOR);
+  lines.push(stripBullets(result.chartStorySummary || "(none)"));
+  lines.push("");
+
+  // Source-to-Documentation Table (tabular — no bullet markers)
+  lines.push(MAJOR);
+  lines.push("SOURCE-TO-DOCUMENTATION TABLE");
+  lines.push(MINOR);
+  lines.push(padRow("Finding", "Source", "Date", "Category"));
+  lines.push(MINOR);
+  if (!result.sourceTable || result.sourceTable.length === 0) {
+    lines.push("No source entries available.");
+  } else {
+    result.sourceTable.forEach((entry) => {
+      lines.push(
+        padRow(
+          stripBullets(entry.finding || ""),
+          stripBullets(entry.sourceDocument || ""),
+          entry.date || "",
+          entry.category || ""
+        )
+      );
+    });
+  }
+  lines.push("");
+
+  // Brief audit notes (compact prose, no bulleted lists)
   const failures = result.auditMeta?.remainingFailures ?? result.auditFailures ?? [];
   const auditPass = result.auditMeta?.finalAuditPass ?? result.auditPass;
   const iterations = result.auditMeta
     ? `${result.auditMeta.iterations} of ${result.auditMeta.maxIterations}`
     : "n/a";
 
-  lines.push("Audit Notes");
+  lines.push(MAJOR);
+  lines.push("AUDIT NOTES");
+  lines.push(MINOR);
   lines.push(
     `Audit pass: ${auditPass === true ? "PASS" : auditPass === false ? "FAIL" : "n/a"}. ` +
       `Iterations used: ${iterations}. ` +
@@ -150,6 +194,7 @@ export function generateSignificantPastHealthHistoryPDF(result: AnalysisResult):
             .map((f) => `(${f.criterion}) ${f.reason}`)
             .join("; ")}.`)
   );
+  lines.push(MAJOR);
 
   downloadTextFile(
     lines.join("\n"),
