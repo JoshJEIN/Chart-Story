@@ -117,8 +117,24 @@ PARAGRAPH 4 — FUNCTIONAL IMPACT & SKILLED NEED DRIVERS
 STEP 5 — DELIVERABLE COMPOSITION
 Only after Steps 1–4 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2, framed with the explicit "before → after" trajectory and dated medication changes from Step 3, and structured per the 4-paragraph synthesis and language/date/enforcement rules from Step 4. Every clinical claim must be traceable to a source document captured in Step 1 and, where applicable, carry a progression label and dates from Step 3.
 
-STEP 6 — AUDIT VALIDATION
-Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"), (c) every medication change carries a date and is linked to a diagnosis, (d) HIPAA-safe identifiers only, (e) no copy-forward filler and none of the banned opener phrases from Step 4, (f) contradictions/gaps and missing baselines/dates surfaced as red flags rather than hidden, (g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled, (h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables, (i) significantPastHealthHistory contains EXACTLY the 4 paragraphs from Step 4 in the prescribed order, (j) every major condition named in any paragraph carries at least one explicit clinical consequence per the Step 4 enforcement rule.
+STEP 6 — AUDIT VALIDATION (MANDATORY GATE — MUST PASS BEFORE OUTPUT)
+Before returning, internally verify EACH of the following criteria and assign pass/fail:
+(a) no claim lacks a source,
+(b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"),
+(c) every medication change carries a date and is linked to a diagnosis,
+(d) HIPAA-safe identifiers only,
+(e) no copy-forward filler and none of the banned opener phrases from Step 4,
+(f) contradictions/gaps and missing baselines/dates surfaced as red flags rather than hidden,
+(g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled,
+(h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables,
+(i) significantPastHealthHistory contains EXACTLY the 4 paragraphs from Step 4 in the prescribed order,
+(j) every major condition named in any paragraph carries at least one explicit clinical consequence per the Step 4 enforcement rule.
+
+🔁 AUDIT LOOP (STRICT)
+- Set auditPass = true ONLY if ALL criteria (a)–(j) pass. Otherwise auditPass = false and populate auditFailures with the specific failing criterion letters and a one-line reason for each.
+- If auditPass == false on your internal first pass, you MUST internally revise the deliverables (return to STEP 4 → STEP 5) and re-validate BEFORE returning. Repeat internally until auditPass == true.
+- The orchestrator will ALSO re-invoke you with revision instructions if the returned auditPass is false. On re-invocation, treat the prior draft as input, address every listed auditFailure, and produce a corrected, fully re-validated output.
+- Never return placeholder, partial, or knowingly non-compliant output. The final returned payload MUST have auditPass == true and auditFailures == [].
 
 Comparison Rules:
 - Cross-reference the initial OASIS diagnoses against the most recent episode's diagnosis list. Flag new, resolved, or changed diagnoses.
@@ -173,189 +189,202 @@ serve(async (req) => {
 
     const userMessage = `Analyze the following recertification packet documents. Compare the initial/first episode documents against the most recent 60-day episode documents. Produce a complete PCR recertification review with detailed analysis, patient summary, red flags, medication changes, and source mapping:\n\n${docSections}`;
 
-    const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userMessage },
-          ],
-          tools: [
-            {
-              type: "function",
-              function: {
-                name: "pcr_analysis",
-                description:
-                  "Return the complete PCR recertification analysis with all required sections including episode comparison, patient summary, and medication tracking.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    recertificationAnalysis: {
-                      type: "string",
-                      description:
-                        "Detailed explanation of why the patient still qualifies for skilled home health, comparing initial certification to the most recent episode. Reference all source documents, note diagnosis changes, medication changes, vitals trends, functional status changes, and skilled need justification.",
-                    },
-                    chartStorySummary: {
-                      type: "string",
-                      description:
-                        "Detailed chart-story style narrative with dates, source names, diagnosis-to-medication linkage, and specific changes over time. Written as a continuous story across episodes. Must compare initial episode findings to current episode findings.",
-                    },
-                    patientSummary: {
-                      type: "string",
-                      description:
-                        "Concise patient summary written in a detailed clinical narrative style. Must include: patient demographics, primary and secondary diagnoses, hospitalization history with dates, current medications linked to diagnoses, functional status, homebound justification, and why skilled nursing care is needed. Use dates, source document names, and clear diagnosis-to-medication linkage throughout. Example style: 'Pt is a [age]-year-old [gender] seen by [provider] on [date] for [reason]. Pt has a primary dx of [diagnosis]; other diagnoses include [list]. Pt continues to [current status]. Pt had [hospitalization/events]. Pt is homebound due to [reason]. HH/SN needed for [specific skilled needs].'",
-                    },
-                    significantPastHealthHistory: {
-                      type: "string",
-                      description:
-                        "Audit-defensible 'Significant Past Health History' section for OASIS recertification. Structured, clinically precise, progression-focused. Use clear sub-headings (e.g., 'Cardiovascular', 'Endocrine', 'Pulmonary', 'Musculoskeletal', 'Neurological', 'GI/GU', 'Recent Hospitalizations & ED Visits', 'Changes Since Last OASIS/POC'). Within each section, provide narrative depth with cause-effect relationships and specific dates. Explicitly identify what has changed since the SOC or prior recertification (new diagnoses, exacerbations, resolved conditions, functional decline, medication shifts, new specialist involvement). Every clinical claim must be tied to a source document (cite by name or category). Use HIPAA-safe references ('Pt'). Do not invent facts; do not use copy-forward language. End with a brief 'Audit Validation' note stating that all entries are sourced and progression language is explicit.",
-                    },
-                    redFlags: {
-                      type: "array",
-                      description:
-                        "List of mismatches, missing elements, contradictions, or concerns that may affect PCR approval. Always produce the draft even with red flags — label them for QA follow-up.",
-                      items: {
-                        type: "object",
-                        properties: {
-                          category: {
-                            type: "string",
-                            description: "Category of the red flag (e.g., Diagnosis Mismatch, Missing Documentation, Medication Discrepancy, Vitals Inconsistency, Stale Language, Copy-Forward Concern)",
-                          },
-                          description: {
-                            type: "string",
-                            description: "Detailed description of the concern with specific document references",
-                          },
-                          severity: {
-                            type: "string",
-                            enum: ["high", "medium", "low"],
-                          },
-                        },
-                        required: ["category", "description", "severity"],
-                        additionalProperties: false,
-                      },
-                    },
-                    medicationChanges: {
-                      type: "array",
-                      description: "All medication changes identified between initial and current episode, with diagnosis linkage.",
-                      items: {
-                        type: "object",
-                        properties: {
-                          medication: {
-                            type: "string",
-                            description: "Medication name",
-                          },
-                          changeType: {
-                            type: "string",
-                            enum: ["new", "discontinued", "dose_change", "frequency_change", "route_change"],
-                          },
-                          details: {
-                            type: "string",
-                            description: "Specific change details (e.g., 'Metformin 500mg BID → 1000mg BID')",
-                          },
-                          linkedDiagnosis: {
-                            type: "string",
-                            description: "Diagnosis this medication change is linked to",
-                          },
-                          sourceDocument: {
-                            type: "string",
-                            description: "Document where this change was identified",
-                          },
-                        },
-                        required: ["medication", "changeType", "details", "linkedDiagnosis", "sourceDocument"],
-                        additionalProperties: false,
-                      },
-                    },
-                    sourceTable: {
-                      type: "array",
-                      description:
-                        "Source-to-documentation table showing which document supports each major finding. Every major claim must have a source mapping.",
-                      items: {
-                        type: "object",
-                        properties: {
-                          finding: { type: "string" },
-                          sourceDocument: { type: "string" },
-                          date: { type: "string" },
-                          category: { type: "string" },
-                        },
-                        required: ["finding", "sourceDocument", "date", "category"],
-                        additionalProperties: false,
-                      },
-                    },
-                    patientIdentifier: {
-                      type: "string",
-                      description:
-                        "HIPAA-compliant patient identifier for filenames. Use patient initials only (e.g., 'JD' for John Doe) extracted from the documents. If no name is found, use 'Unknown_Pt'. Must be safe for filenames (letters, numbers, underscores only — no spaces or special characters).",
-                    },
-                    episodeRange: {
-                      type: "string",
-                      description:
-                        "The most recent 60-day episode date range analyzed, formatted for filenames as 'YYYY-MM-DD_to_YYYY-MM-DD' (e.g., '2024-08-01_to_2024-09-29'). Extract from the OASIS, POC, or certification period in the documents. If dates cannot be determined, use 'Episode_Unknown'.",
-                    },
-                  },
-                  required: [
-                    "recertificationAnalysis",
-                    "chartStorySummary",
-                    "patientSummary",
-                    "significantPastHealthHistory",
-                    "redFlags",
-                    "medicationChanges",
-                    "sourceTable",
-                    "patientIdentifier",
-                    "episodeRange",
-                  ],
-                  additionalProperties: false,
+    const toolDefinition = {
+      type: "function",
+      function: {
+        name: "pcr_analysis",
+        description:
+          "Return the complete PCR recertification analysis with all required sections including episode comparison, patient summary, and medication tracking.",
+        parameters: {
+          type: "object",
+          properties: {
+            recertificationAnalysis: { type: "string", description: "Detailed explanation of why the patient still qualifies for skilled home health, comparing initial certification to the most recent episode." },
+            chartStorySummary: { type: "string", description: "Detailed chart-story style narrative with dates, source names, diagnosis-to-medication linkage, and specific changes over time." },
+            patientSummary: { type: "string", description: "Concise patient summary in detailed clinical narrative style with demographics, diagnoses, hospitalizations, medications-to-diagnosis linkage, functional status, homebound and skilled need justification." },
+            significantPastHealthHistory: { type: "string", description: "Audit-defensible 'Significant Past Health History' formatted EXACTLY as the 4 paragraphs from STEP 4 (Core Diagnoses & Major History; Comorbidities; Clinical Course & Changes Since Last OASIS; Functional Impact & Skilled Need Drivers). HIPAA-safe." },
+            redFlags: {
+              type: "array",
+              description: "Mismatches, missing elements, contradictions, or concerns affecting PCR approval.",
+              items: {
+                type: "object",
+                properties: {
+                  category: { type: "string" },
+                  description: { type: "string" },
+                  severity: { type: "string", enum: ["high", "medium", "low"] },
                 },
+                required: ["category", "description", "severity"],
+                additionalProperties: false,
               },
             },
-          ],
-          tool_choice: {
-            type: "function",
-            function: { name: "pcr_analysis" },
+            medicationChanges: {
+              type: "array",
+              description: "All medication changes with diagnosis linkage.",
+              items: {
+                type: "object",
+                properties: {
+                  medication: { type: "string" },
+                  changeType: { type: "string", enum: ["new", "discontinued", "dose_change", "frequency_change", "route_change"] },
+                  details: { type: "string" },
+                  linkedDiagnosis: { type: "string" },
+                  sourceDocument: { type: "string" },
+                },
+                required: ["medication", "changeType", "details", "linkedDiagnosis", "sourceDocument"],
+                additionalProperties: false,
+              },
+            },
+            sourceTable: {
+              type: "array",
+              description: "Source-to-documentation table for each major finding.",
+              items: {
+                type: "object",
+                properties: {
+                  finding: { type: "string" },
+                  sourceDocument: { type: "string" },
+                  date: { type: "string" },
+                  category: { type: "string" },
+                },
+                required: ["finding", "sourceDocument", "date", "category"],
+                additionalProperties: false,
+              },
+            },
+            patientIdentifier: { type: "string", description: "HIPAA-safe filename identifier (initials only or 'Unknown_Pt')." },
+            episodeRange: { type: "string", description: "Episode date range as 'YYYY-MM-DD_to_YYYY-MM-DD' or 'Episode_Unknown'." },
+            auditPass: { type: "boolean", description: "Result of STEP 6 audit. MUST be true on the final returned payload." },
+            auditFailures: {
+              type: "array",
+              description: "Failed STEP 6 criteria (a)–(j). Empty when auditPass is true.",
+              items: {
+                type: "object",
+                properties: {
+                  criterion: { type: "string" },
+                  reason: { type: "string" },
+                },
+                required: ["criterion", "reason"],
+                additionalProperties: false,
+              },
+            },
           },
-        }),
-      }
-    );
+          required: [
+            "recertificationAnalysis",
+            "chartStorySummary",
+            "patientSummary",
+            "significantPastHealthHistory",
+            "redFlags",
+            "medicationChanges",
+            "sourceTable",
+            "patientIdentifier",
+            "episodeRange",
+            "auditPass",
+            "auditFailures",
+          ],
+          additionalProperties: false,
+        },
+      },
+    };
 
-    if (!response.ok) {
-      if (response.status === 429) {
+    // Conversation history — grows across audit-retry iterations
+    const messages: Array<{ role: string; content: string }> = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ];
+
+    const MAX_AUDIT_ITERATIONS = 3;
+    let analysisResult: any = null;
+    let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
+    let iterationsRun = 0;
+
+    for (let iteration = 1; iteration <= MAX_AUDIT_ITERATIONS; iteration++) {
+      iterationsRun = iteration;
+      console.log(`pcr-analyze: audit iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
+
+      const response = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-pro",
+            messages,
+            tools: [toolDefinition],
+            tool_choice: { type: "function", function: { name: "pcr_analysis" } },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          return new Response(
+            JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        if (response.status === 402) {
+          return new Response(
+            JSON.stringify({ error: "AI credits exhausted. Please add funds in Settings > Workspace > Usage." }),
+            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const errText = await response.text();
+        console.error("AI gateway error:", response.status, errText);
         return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "AI analysis failed" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+
+      const data = await response.json();
+      const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+      if (!toolCall) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add funds in Settings > Workspace > Usage." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "AI did not return structured analysis" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-      return new Response(
-        JSON.stringify({ error: "AI analysis failed" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+
+      analysisResult = JSON.parse(toolCall.function.arguments);
+      lastAuditFailures = Array.isArray(analysisResult.auditFailures)
+        ? analysisResult.auditFailures
+        : [];
+
+      console.log(
+        `pcr-analyze: iteration ${iteration} → auditPass=${analysisResult.auditPass}, failures=${lastAuditFailures.length}`
       );
+
+      if (analysisResult.auditPass === true && lastAuditFailures.length === 0) {
+        break;
+      }
+
+      if (iteration < MAX_AUDIT_ITERATIONS) {
+        const failureSummary =
+          lastAuditFailures.length > 0
+            ? lastAuditFailures.map((f) => `  - (${f.criterion}) ${f.reason}`).join("\n")
+            : "  - auditPass was not true; identify and fix all STEP 6 criteria failures.";
+
+        messages.push({
+          role: "assistant",
+          content: `Prior draft (iteration ${iteration}) failed STEP 6 audit. auditPass=${analysisResult.auditPass}.`,
+        });
+        messages.push({
+          role: "user",
+          content:
+            `Revise to pass all audit criteria. The following STEP 6 failures were reported:\n${failureSummary}\n\n` +
+            `Return to STEP 4 (NARRATIVE SYNTHESIS) and STEP 5 (DELIVERABLE COMPOSITION), correct each failure, then re-run STEP 6. ` +
+            `Do not return until auditPass == true and auditFailures == []. Preserve previously correct content; revise only what is non-compliant.`,
+        });
+      }
     }
 
-    const data = await response.json();
-
-    // Extract tool call arguments
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) {
-      return new Response(
-        JSON.stringify({ error: "AI did not return structured analysis" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (analysisResult) {
+      analysisResult._auditMeta = {
+        iterations: iterationsRun,
+        maxIterations: MAX_AUDIT_ITERATIONS,
+        finalAuditPass: analysisResult.auditPass === true && lastAuditFailures.length === 0,
+        remainingFailures: lastAuditFailures,
+      };
     }
-
-    const analysisResult = JSON.parse(toolCall.function.arguments);
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
