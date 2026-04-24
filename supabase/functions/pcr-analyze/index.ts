@@ -168,7 +168,71 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const rawBody = await req.text();
+    // ============================================================
+    // PAYLOAD SIZE GUARDS — reject oversized requests BEFORE parsing
+    // ============================================================
+    // Supabase Edge Functions hard-cap request bodies at ~10MB. When the
+    // payload is too large, the body is silently truncated which then
+    // surfaces as "Unexpected end of JSON input" during JSON.parse.
+    // We pre-check Content-Length and stream-cap req.text() to fail fast
+    // with an actionable 413 before that happens.
+    const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024; // 9MB safety margin under 10MB platform cap
+    const PER_DOC_CHAR_CAP = 80_000;           // truncate any single doc above this
+    const TOTAL_DOC_CHAR_CAP = 600_000;        // hard ceiling on combined doc text
+
+    const contentLengthHeader = req.headers.get("content-length");
+    if (contentLengthHeader) {
+      const declared = parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(declared) && declared > MAX_PAYLOAD_BYTES) {
+        console.warn("pcr-analyze: rejecting oversized payload", declared);
+        return new Response(
+          JSON.stringify({
+            error: `Payload too large (${(declared / 1024 / 1024).toFixed(1)} MB). The maximum is ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB. Analyze fewer or smaller documents per run.`,
+          }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Read the body with a streaming size cap so a missing/lying
+    // Content-Length header can't slip past the check.
+    let rawBody = "";
+    try {
+      const reader = req.body?.getReader();
+      if (!reader) {
+        rawBody = await req.text();
+      } else {
+        const decoder = new TextDecoder();
+        let received = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            received += value.byteLength;
+            if (received > MAX_PAYLOAD_BYTES) {
+              try { await reader.cancel(); } catch (_) { /* noop */ }
+              return new Response(
+                JSON.stringify({
+                  error: `Payload exceeded the ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB limit while uploading. Analyze fewer or smaller documents per run.`,
+                }),
+                { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+            rawBody += decoder.decode(value, { stream: true });
+          }
+        }
+        rawBody += decoder.decode();
+      }
+    } catch (readErr) {
+      console.error("pcr-analyze: failed to read request body", readErr);
+      return new Response(
+        JSON.stringify({
+          error: "Failed to read request body. The upload may have been interrupted — try again with fewer documents.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (!rawBody || rawBody.trim().length === 0) {
       return new Response(
         JSON.stringify({
@@ -191,7 +255,37 @@ export const handler = async (req: Request): Promise<Response> => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const { documents, maxIterations } = body ?? {};
+    const { documents: rawDocuments, maxIterations } = body ?? {};
+
+    // Defensive server-side chunking: cap each document's text and the
+    // combined total so a single huge file can't silently blow the AI
+    // gateway request. Truncated docs are tagged so the AI sees it.
+    let documents = rawDocuments;
+    if (Array.isArray(rawDocuments)) {
+      let runningTotal = 0;
+      documents = rawDocuments.map((d: any) => {
+        if (!d || typeof d.text !== "string") return d;
+        let text = d.text;
+        let truncated = false;
+        if (text.length > PER_DOC_CHAR_CAP) {
+          text = text.slice(0, PER_DOC_CHAR_CAP);
+          truncated = true;
+        }
+        const remaining = TOTAL_DOC_CHAR_CAP - runningTotal;
+        if (remaining <= 0) {
+          text = "";
+          truncated = true;
+        } else if (text.length > remaining) {
+          text = text.slice(0, remaining);
+          truncated = true;
+        }
+        runningTotal += text.length;
+        if (truncated) {
+          text += "\n\n[TEXT TRUNCATED BY SERVER PAYLOAD LIMIT — analyze remaining content; surface a red flag if critical sections were cut.]";
+        }
+        return { ...d, text };
+      });
+    }
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
