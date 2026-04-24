@@ -185,15 +185,33 @@ export const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Build the user message from all documents
-    const docSections = documents
+    // Reject documents that have no usable text. Without this guard the AI
+    // would invent diagnoses, meds, and PMHx out of thin air.
+    const MIN_USEFUL_CHARS = 200;
+    const usableDocs = (documents as Array<{ category: string; name: string; text: string }>)
+      .filter((d) => typeof d.text === "string" && d.text.trim().length >= MIN_USEFUL_CHARS);
+
+    if (usableDocs.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Uploaded documents contained no extractable clinical text. Re-upload text-based PDFs, DOCX, TXT, or CSV exports — scanned/image PDFs require OCR before analysis.",
+        }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Build the user message from all USABLE documents, preserving file names
+    // and categories so the AI can cite the correct source per finding.
+    const docSections = usableDocs
       .map(
-        (d: { category: string; name: string; text: string }, i: number) =>
+        (d, i) =>
           `--- DOCUMENT ${i + 1} ---\nCategory: ${d.category}\nFile: ${d.name}\n\n${d.text}\n`
       )
       .join("\n");
 
-    const userMessage = `Analyze the following recertification packet documents. Compare the initial/first episode documents against the most recent 60-day episode documents. Produce a complete PCR recertification review with detailed analysis, patient summary, red flags, medication changes, and source mapping:\n\n${docSections}`;
+    const userMessage = `Analyze the following recertification packet documents. Compare the initial/first episode documents against the most recent 60-day episode documents. Produce a complete PCR recertification review with detailed analysis, patient summary, red flags, medication changes, and source mapping.\n\nCRITICAL GROUNDING RULES:\n- Use ONLY facts that appear verbatim or are directly inferable from the document text below.\n- Every diagnosis, medication, date, lab value, and PMHx item MUST be traceable to a specific DOCUMENT N / File: <name>.\n- If a required field cannot be supported by the source text, write "[NOT DOCUMENTED]" and surface a red flag — do NOT fabricate, do NOT use prior knowledge of typical home-health patients.\n- Patient identifier must be derived from the actual document text or filenames provided; if absent use "Unknown_Pt".\n\nDOCUMENTS:\n\n${docSections}`;
+
 
     const toolDefinition = {
       type: "function",

@@ -34,7 +34,31 @@ export default function Index() {
 
     try {
       const extracted = await extractTextFromDocuments(documents);
-      const result = await analyzeDocuments(extracted, { maxIterations });
+
+      // Refuse to send unreadable files to the AI — that is what produced the
+      // fully hallucinated analysis (PMHx, meds, etc. all wrong).
+      const unreadable = extracted.filter((d) => !d.ok);
+      if (unreadable.length === extracted.length) {
+        throw new Error(
+          `None of the uploaded files produced extractable text. ${
+            unreadable[0]?.note ?? "Re-upload as text-based PDF, DOCX, TXT, or CSV."
+          }`
+        );
+      }
+      if (unreadable.length > 0) {
+        toast({
+          title: `${unreadable.length} file(s) could not be read`,
+          description:
+            unreadable
+              .map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`)
+              .join("\n") +
+            "\n\nProceeding with the readable files only.",
+          variant: "destructive",
+        });
+      }
+
+      const readable = extracted.filter((d) => d.ok);
+      const result = await analyzeDocuments(readable, { maxIterations });
       setAnalysisResult(result);
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
