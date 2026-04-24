@@ -54,11 +54,32 @@ Inclusion rule: INCLUDE all non-impactful, stable, chronic-but-controlled, and r
 
 Use this priority ranking to drive: the order of items in significantPastHealthHistory, the focus of recertificationAnalysis and chartStorySummary, the lead conditions in patientSummary, and the severity assignment of redFlags.
 
-STEP 3 — DELIVERABLE COMPOSITION
-Only after Steps 1 and 2 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2. Every clinical claim must be traceable to a source document captured in Step 1.
+STEP 3 — PROGRESSION ANALYSIS (CRITICAL, INTERNAL, perform silently after prioritization and before composition)
+After Steps 1 and 2, explicitly determine the clinical trajectory of every prioritized condition by comparing baseline (Start of Care OR last OASIS assessment — whichever is the most recent prior reference point) to the current/most-recent episode documentation. This step MUST produce clear "before → after" clinical reasoning that downstream sections rely on. Do not skip, summarize, or merge this step with Step 1.
 
-STEP 4 — AUDIT VALIDATION
-Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit where applicable ("worsened", "new onset", "stable since", "resolved on [date]"), (c) HIPAA-safe identifiers only, (d) no copy-forward filler, (e) contradictions/gaps surfaced as red flags rather than hidden, (f) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled.
+For EACH prioritized condition/finding, classify the trajectory as exactly one of:
+- WORSENED (objective decline: e.g., A1c 7.2% on [date] → 9.4% on [date]; ambulation 50 ft → 10 ft with walker; new SOB at rest)
+- IMPROVED (objective gain with supporting data and date)
+- STABLE (controlled, unchanged, with supporting comparison and dates — not assumed)
+- UNSTABLE (fluctuating, recurrent exacerbations, repeated ED visits, labile vitals/glucose, recurrent falls)
+- NEW ONSET (diagnosis, complication, or finding not present at baseline — include first-documented date and source)
+- RESOLVED (with resolution date and source)
+
+For EACH classification, document explicitly:
+- Previous diagnosis / baseline state (with date and source document)
+- Present diagnosis / current state (with date and source document)
+- Medication changes tied to that condition WITH DATES (start date, discontinuation date, dose/frequency/route change date, prescribing context, source) — every med change must be linked to the driving diagnosis or clinical event
+- New diagnoses or complications that emerged during the episode (with first-documented date, source, and clinical trigger if known)
+- Disease progression markers (e.g., worsening glycemic control with A1c trend, EF decline, GFR decline, weight gain pattern in CHF, increasing O2 needs, declining MAHC-10/Tinetti, cognitive decline scores, increasing pain scores, wound stage progression, increasing assist level for ADLs)
+- Any change in homebound status or skilled need driven by the progression
+
+Output of this internal step is a "before → after" map per condition that MUST be used verbatim (paraphrased only for readability) inside recertificationAnalysis, chartStorySummary, significantPastHealthHistory, and medicationChanges. Progression language must be explicit and dated — never vague. If baseline data is missing for a condition, mark "[BASELINE NOT DOCUMENTED]" and surface it as a red flag rather than guessing.
+
+STEP 4 — DELIVERABLE COMPOSITION
+Only after Steps 1, 2, and 3 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2, and framed with the explicit "before → after" trajectory and dated medication changes from Step 3. Every clinical claim must be traceable to a source document captured in Step 1 and, where applicable, carry a progression label and dates from Step 3.
+
+STEP 5 — AUDIT VALIDATION
+Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"), (c) every medication change carries a date and is linked to a diagnosis, (d) HIPAA-safe identifiers only, (e) no copy-forward filler, (f) contradictions/gaps and missing baselines surfaced as red flags rather than hidden, (g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled, (h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables.
 
 Comparison Rules:
 - Cross-reference the initial OASIS diagnoses against the most recent episode's diagnosis list. Flag new, resolved, or changed diagnoses.
