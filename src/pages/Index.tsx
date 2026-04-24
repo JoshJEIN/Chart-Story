@@ -16,6 +16,7 @@ export default function Index() {
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [maxIterations, setMaxIterations] = useState<number>(3);
   const { toast } = useToast();
 
   const handleAnalyze = async () => {
