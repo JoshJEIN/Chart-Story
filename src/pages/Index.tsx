@@ -34,7 +34,7 @@ export default function Index() {
 
     try {
       const extracted = await extractTextFromDocuments(documents);
-      const result = await analyzeDocuments(extracted);
+      const result = await analyzeDocuments(extracted, { maxIterations });
       setAnalysisResult(result);
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
