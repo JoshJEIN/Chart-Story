@@ -18,7 +18,35 @@ export default function Index() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const { toast } = useToast();
+
+  const handleHealthCheck = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("pcr-analyze", {
+        body: { health: 1 },
+        headers: { "x-health-check": "1" },
+      });
+      if (error) throw error;
+      const ok = data?.status === "ok";
+      toast({
+        title: ok ? "Edge function healthy" : "Unexpected health response",
+        description: ok
+          ? `pcr-analyze deployed • API key ${data.hasApiKey ? "configured" : "MISSING"} • ${data.timestamp}`
+          : JSON.stringify(data),
+        variant: ok && data.hasApiKey ? "default" : "destructive",
+      });
+    } catch (e) {
+      toast({
+        title: "Health check failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const handleAnalyze = async () => {
     if (documents.length === 0) {
