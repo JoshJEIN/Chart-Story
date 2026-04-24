@@ -117,8 +117,24 @@ PARAGRAPH 4 — FUNCTIONAL IMPACT & SKILLED NEED DRIVERS
 STEP 5 — DELIVERABLE COMPOSITION
 Only after Steps 1–4 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2, framed with the explicit "before → after" trajectory and dated medication changes from Step 3, and structured per the 4-paragraph synthesis and language/date/enforcement rules from Step 4. Every clinical claim must be traceable to a source document captured in Step 1 and, where applicable, carry a progression label and dates from Step 3.
 
-STEP 6 — AUDIT VALIDATION
-Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"), (c) every medication change carries a date and is linked to a diagnosis, (d) HIPAA-safe identifiers only, (e) no copy-forward filler and none of the banned opener phrases from Step 4, (f) contradictions/gaps and missing baselines/dates surfaced as red flags rather than hidden, (g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled, (h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables, (i) significantPastHealthHistory contains EXACTLY the 4 paragraphs from Step 4 in the prescribed order, (j) every major condition named in any paragraph carries at least one explicit clinical consequence per the Step 4 enforcement rule.
+STEP 6 — AUDIT VALIDATION (MANDATORY GATE — MUST PASS BEFORE OUTPUT)
+Before returning, internally verify EACH of the following criteria and assign pass/fail:
+(a) no claim lacks a source,
+(b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"),
+(c) every medication change carries a date and is linked to a diagnosis,
+(d) HIPAA-safe identifiers only,
+(e) no copy-forward filler and none of the banned opener phrases from Step 4,
+(f) contradictions/gaps and missing baselines/dates surfaced as red flags rather than hidden,
+(g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled,
+(h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables,
+(i) significantPastHealthHistory contains EXACTLY the 4 paragraphs from Step 4 in the prescribed order,
+(j) every major condition named in any paragraph carries at least one explicit clinical consequence per the Step 4 enforcement rule.
+
+🔁 AUDIT LOOP (STRICT)
+- Set auditPass = true ONLY if ALL criteria (a)–(j) pass. Otherwise auditPass = false and populate auditFailures with the specific failing criterion letters and a one-line reason for each.
+- If auditPass == false on your internal first pass, you MUST internally revise the deliverables (return to STEP 4 → STEP 5) and re-validate BEFORE returning. Repeat internally until auditPass == true.
+- The orchestrator will ALSO re-invoke you with revision instructions if the returned auditPass is false. On re-invocation, treat the prior draft as input, address every listed auditFailure, and produce a corrected, fully re-validated output.
+- Never return placeholder, partial, or knowingly non-compliant output. The final returned payload MUST have auditPass == true and auditFailures == [].
 
 Comparison Rules:
 - Cross-reference the initial OASIS diagnoses against the most recent episode's diagnosis list. Flag new, resolved, or changed diagnoses.
