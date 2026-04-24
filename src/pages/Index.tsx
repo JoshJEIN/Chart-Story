@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import ReviewHeader from "@/components/ReviewHeader";
 import DocumentUploader from "@/components/DocumentUploader";
