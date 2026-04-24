@@ -1,5 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
-import { AnalysisResult, RedFlag, SourceEntry, MedicationChange } from "@/types/pcr";
+import {
+  AnalysisResult,
+  RedFlag,
+  SourceEntry,
+  MedicationChange,
+  AuditFailure,
+  AuditMeta,
+} from "@/types/pcr";
 
 interface DocumentPayload {
   category: string;
@@ -7,11 +14,19 @@ interface DocumentPayload {
   text: string;
 }
 
+interface AnalyzeOptions {
+  maxIterations?: number;
+}
+
 export async function analyzeDocuments(
-  docs: DocumentPayload[]
+  docs: DocumentPayload[],
+  options: AnalyzeOptions = {}
 ): Promise<AnalysisResult> {
   const { data, error } = await supabase.functions.invoke("pcr-analyze", {
-    body: { documents: docs },
+    body: {
+      documents: docs,
+      maxIterations: options.maxIterations,
+    },
   });
 
   if (error) throw new Error(error.message || "Analysis failed");
@@ -26,6 +41,9 @@ export async function analyzeDocuments(
     sourceTable: SourceEntry[];
     patientIdentifier?: string;
     episodeRange?: string;
+    auditPass?: boolean;
+    auditFailures?: AuditFailure[];
+    _auditMeta?: AuditMeta;
   };
 
   return {
@@ -34,6 +52,9 @@ export async function analyzeDocuments(
     medicationChanges: result.medicationChanges || [],
     patientIdentifier: result.patientIdentifier || "Unknown_Pt",
     episodeRange: result.episodeRange || "Episode_Unknown",
+    auditPass: result.auditPass,
+    auditFailures: result.auditFailures || [],
+    auditMeta: result._auditMeta,
     generatedAt: new Date(),
   };
 }

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import ReviewHeader from "@/components/ReviewHeader";
 import DocumentUploader from "@/components/DocumentUploader";
@@ -14,6 +16,7 @@ export default function Index() {
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [maxIterations, setMaxIterations] = useState<number>(3);
   const { toast } = useToast();
 
   const handleAnalyze = async () => {
@@ -31,7 +34,7 @@ export default function Index() {
 
     try {
       const extracted = await extractTextFromDocuments(documents);
-      const result = await analyzeDocuments(extracted);
+      const result = await analyzeDocuments(extracted, { maxIterations });
       setAnalysisResult(result);
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
@@ -68,6 +71,28 @@ export default function Index() {
               other supporting records. Categorize each document for best results.
             </p>
             <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
+          </section>
+
+          {/* Audit settings */}
+          <section className="rounded-md border border-border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-accent" />
+              <Label className="text-sm font-semibold">
+                Maximum audit retry iterations: {maxIterations}
+              </Label>
+            </div>
+            <Slider
+              value={[maxIterations]}
+              min={1}
+              max={10}
+              step={1}
+              onValueChange={(v) => setMaxIterations(v[0] ?? 3)}
+              disabled={isAnalyzing}
+            />
+            <p className="text-xs text-muted-foreground">
+              The audit loop will revise the draft until STEP 6 passes or this limit is reached.
+              Higher values increase quality but cost more time and credits.
+            </p>
           </section>
 
           {/* Analyze Button */}

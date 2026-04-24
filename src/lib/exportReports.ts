@@ -136,6 +136,79 @@ export function generateSignificantPastHealthHistoryPDF(result: AnalysisResult):
   );
 }
 
+export function generateAuditQAJSON(result: AnalysisResult): void {
+  const payload = {
+    patientIdentifier: result.patientIdentifier,
+    episodeRange: result.episodeRange,
+    generatedAt: result.generatedAt.toISOString(),
+    auditPass: result.auditPass ?? null,
+    auditFailures: result.auditFailures ?? [],
+    auditMeta: result.auditMeta ?? null,
+    revisedDraft: {
+      significantPastHealthHistory: result.significantPastHealthHistory,
+      patientSummary: result.patientSummary,
+      chartStorySummary: result.chartStorySummary,
+      recertificationAnalysis: result.recertificationAnalysis,
+    },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = buildFilename("PCR_Audit_QA", result).replace(/\.txt$/, ".json");
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function generateAuditQAReport(result: AnalysisResult): void {
+  const lines: string[] = [];
+  const date = result.generatedAt.toLocaleDateString();
+
+  lines.push("PCR AUDIT QA REPORT");
+  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
+  lines.push(`Generated: ${date}`);
+  lines.push("=".repeat(70));
+  lines.push("");
+
+  lines.push("AUDIT SUMMARY");
+  lines.push("-".repeat(40));
+  lines.push(`auditPass: ${result.auditPass ?? "n/a"}`);
+  if (result.auditMeta) {
+    lines.push(`Iterations used: ${result.auditMeta.iterations} of ${result.auditMeta.maxIterations}`);
+    lines.push(`Final audit pass: ${result.auditMeta.finalAuditPass}`);
+  }
+  lines.push("");
+
+  lines.push("REMAINING AUDIT FAILURES");
+  lines.push("-".repeat(40));
+  const failures = result.auditMeta?.remainingFailures ?? result.auditFailures ?? [];
+  if (failures.length === 0) {
+    lines.push("None — all STEP 6 criteria passed.");
+  } else {
+    failures.forEach((f, i) => {
+      lines.push(`${i + 1}. (${f.criterion}) ${f.reason}`);
+    });
+  }
+  lines.push("");
+
+  lines.push("REVISED DRAFT — SIGNIFICANT PAST HEALTH HISTORY");
+  lines.push("-".repeat(40));
+  lines.push(result.significantPastHealthHistory || "(none)");
+  lines.push("");
+
+  lines.push("REVISED DRAFT — PATIENT SUMMARY");
+  lines.push("-".repeat(40));
+  lines.push(result.patientSummary || "(none)");
+  lines.push("");
+
+  downloadTextFile(lines.join("\n"), buildFilename("PCR_Audit_QA_Report", result));
+}
+
 function padRow(a: string, b: string, c: string, d: string): string {
   return `${a.substring(0, 30).padEnd(32)}${b.substring(0, 20).padEnd(22)}${c.padEnd(14)}${d}`;
 }

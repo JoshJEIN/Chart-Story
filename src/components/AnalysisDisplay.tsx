@@ -1,5 +1,16 @@
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle, FileSearch, Table, Download, Pill, User, History } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  FileSearch,
+  Table,
+  Download,
+  Pill,
+  User,
+  History,
+  ShieldCheck,
+  ShieldAlert,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +19,8 @@ import {
   generateDetailedAnalysisPDF,
   generatePatientSummaryPDF,
   generateSignificantPastHealthHistoryPDF,
+  generateAuditQAJSON,
+  generateAuditQAReport,
 } from "@/lib/exportReports";
 
 interface AnalysisDisplayProps {
@@ -62,8 +75,85 @@ export default function AnalysisDisplay({ result }: AnalysisDisplayProps) {
             <Download className="h-4 w-4" />
             Download Significant Past Health History
           </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => generateAuditQAJSON(result)}
+          >
+            <Download className="h-4 w-4" />
+            Download Audit QA (JSON)
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => generateAuditQAReport(result)}
+          >
+            <Download className="h-4 w-4" />
+            Download Audit QA Report
+          </Button>
         </div>
       </motion.div>
+
+      {/* Audit Meta */}
+      {(result.auditMeta || result.auditPass !== undefined) && (
+        <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
+          <Card
+            className={
+              result.auditMeta?.finalAuditPass === false
+                ? "border-flag/40"
+                : "border-success/30"
+            }
+          >
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                {result.auditMeta?.finalAuditPass === false ? (
+                  <ShieldAlert className="h-5 w-5 text-flag" />
+                ) : (
+                  <ShieldCheck className="h-5 w-5 text-success" />
+                )}
+                Audit Loop Result
+                <Badge
+                  variant={
+                    result.auditMeta?.finalAuditPass === false
+                      ? "destructive"
+                      : "secondary"
+                  }
+                  className="ml-2 text-xs"
+                >
+                  {result.auditMeta?.finalAuditPass === false ? "FAIL" : "PASS"}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <p>
+                <span className="text-muted-foreground">Iterations used:</span>{" "}
+                <span className="font-mono">
+                  {result.auditMeta?.iterations ?? "—"} of{" "}
+                  {result.auditMeta?.maxIterations ?? "—"}
+                </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">auditPass:</span>{" "}
+                <span className="font-mono">{String(result.auditPass)}</span>
+              </p>
+              {result.auditMeta?.remainingFailures &&
+                result.auditMeta.remainingFailures.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-semibold mb-1">Remaining failures:</p>
+                    <ul className="space-y-1 list-disc pl-5 text-muted-foreground">
+                      {result.auditMeta.remainingFailures.map((f, i) => (
+                        <li key={i}>
+                          <span className="font-mono">({f.criterion})</span>{" "}
+                          {f.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Significant Past Health History */}
       {result.significantPastHealthHistory && (

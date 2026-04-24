@@ -162,15 +162,21 @@ Explicitly reference in your analysis:
 - Medication changes with diagnosis linkage
 - Any changes within the latest 60-day episode and within 14 days after that episode when they affect recertification support.`;
 
-serve(async (req) => {
+export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { documents } = await req.json();
+    const body = await req.json();
+    const { documents, maxIterations } = body ?? {};
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    // Allow tests to inject a stub AI gateway endpoint
+    const AI_GATEWAY_URL =
+      Deno.env.get("AI_GATEWAY_URL") ??
+      "https://ai.gateway.lovable.dev/v1/chat/completions";
 
     if (!documents || !Array.isArray(documents) || documents.length === 0) {
       return new Response(
@@ -288,7 +294,12 @@ serve(async (req) => {
       { role: "user", content: userMessage },
     ];
 
-    const MAX_AUDIT_ITERATIONS = 3;
+    // Allow caller to override the audit retry budget. Clamp to [1, 10].
+    const requestedMax =
+      typeof maxIterations === "number" && Number.isFinite(maxIterations)
+        ? Math.floor(maxIterations)
+        : 3;
+    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requestedMax));
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -298,7 +309,7 @@ serve(async (req) => {
       console.log(`pcr-analyze: audit iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
 
       const response = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        AI_GATEWAY_URL,
         {
           method: "POST",
           headers: {
@@ -398,4 +409,10 @@ serve(async (req) => {
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
-});
+};
+
+// Only auto-start the HTTP listener outside of test runs.
+// Tests import `handler` directly and provide their own request objects.
+if (!Deno.env.get("PCR_ANALYZE_TEST_MODE")) {
+  serve(handler);
+}
