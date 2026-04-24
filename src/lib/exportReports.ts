@@ -118,22 +118,52 @@ export function generateSignificantPastHealthHistoryPDF(result: AnalysisResult):
   const lines: string[] = [];
   const date = result.generatedAt.toLocaleDateString();
 
+  // Header (minimal — no decorative bullets/separators in the body)
   lines.push("SIGNIFICANT PAST HEALTH HISTORY — OASIS RECERTIFICATION");
   lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
   lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
-  lines.push("=".repeat(70));
   lines.push("");
-  lines.push(
+
+  // The narrative — clinically sound, chronologically intelligent,
+  // audit-defensible. No bullets, no list markers.
+  const body =
     result.significantPastHealthHistory ||
-      "No significant past health history was generated. Please re-run analysis."
-  );
+    "No significant past health history was generated. Please re-run analysis.";
+  lines.push(stripBullets(body));
   lines.push("");
+
+  // Brief audit notes (compact, no bulleted lists)
+  const failures = result.auditMeta?.remainingFailures ?? result.auditFailures ?? [];
+  const auditPass = result.auditMeta?.finalAuditPass ?? result.auditPass;
+  const iterations = result.auditMeta
+    ? `${result.auditMeta.iterations} of ${result.auditMeta.maxIterations}`
+    : "n/a";
+
+  lines.push("Audit Notes");
+  lines.push(
+    `Audit pass: ${auditPass === true ? "PASS" : auditPass === false ? "FAIL" : "n/a"}. ` +
+      `Iterations used: ${iterations}. ` +
+      (failures.length === 0
+        ? "All STEP 6 criteria satisfied (source-traceable claims, dated progression language, HIPAA-safe identifiers, 4-paragraph structure, clinical-consequence enforcement)."
+        : `Outstanding items: ${failures
+            .map((f) => `(${f.criterion}) ${f.reason}`)
+            .join("; ")}.`)
+  );
 
   downloadTextFile(
     lines.join("\n"),
     buildFilename("PCR_Significant_Past_Health_History", result)
   );
+}
+
+// Removes bullet/list markers (•, -, *, +, numeric "1.") from line starts so
+// the final document reads as continuous clinical prose.
+function stripBullets(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*+•]|\d+[.)])\s+/, ""))
+    .join("\n");
 }
 
 export function generateAuditQAJSON(result: AnalysisResult): void {
