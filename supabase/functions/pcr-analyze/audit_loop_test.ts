@@ -18,10 +18,9 @@ interface StubServer {
 
 async function startStubGateway(scripted: ScriptedAnalysis[]): Promise<StubServer> {
   let calls = 0;
-  const ac = new AbortController();
 
   const server = Deno.serve(
-    { port: 0, signal: ac.signal, onListen: () => {} },
+    { port: 0, onListen: () => {} },
     (_req) => {
       const idx = Math.min(calls, scripted.length - 1);
       const payload = scripted[idx];
@@ -51,7 +50,6 @@ async function startStubGateway(scripted: ScriptedAnalysis[]): Promise<StubServe
     },
   );
 
-  // Wait until the server is actually listening.
   const addr = server.addr as Deno.NetAddr;
   const url = `http://127.0.0.1:${addr.port}/v1/chat/completions`;
 
@@ -59,12 +57,7 @@ async function startStubGateway(scripted: ScriptedAnalysis[]): Promise<StubServe
     url,
     callCount: () => calls,
     stop: async () => {
-      ac.abort();
-      try {
-        await server.finished;
-      } catch (_) {
-        /* aborted */
-      }
+      await server.shutdown();
     },
   };
 }
