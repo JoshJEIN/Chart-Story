@@ -40,11 +40,25 @@ Extract:
 - Current status (most recent vitals, current functional level, cognition, pain, wound status, homebound status, current skilled need)
 - Explicit DELTA between baseline and current for: diagnoses, medications, vitals, function, cognition, pain, homebound justification, skilled need
 
-STEP 2 — DELIVERABLE COMPOSITION
-Only after Step 1 is complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1. Every clinical claim must be traceable to a source document captured in Step 1.
+STEP 2 — CLINICAL PRIORITIZATION (INTERNAL, perform silently after extraction and before composition)
+After Step 1, internally rank every extracted condition, finding, and clinical issue by clinical weight so that high-impact items lead each deliverable section and lower-impact items are preserved but de-emphasized. Do not drop any condition during prioritization.
 
-STEP 3 — AUDIT VALIDATION
-Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit where applicable ("worsened", "new onset", "stable since", "resolved on [date]"), (c) HIPAA-safe identifiers only, (d) no copy-forward filler, (e) contradictions/gaps surfaced as red flags rather than hidden.
+Prioritize based on:
+- Risk: life-threatening, decompensation-prone, or high-acuity conditions first (e.g., CHF, active/recurrent cancer, uncontrolled DM, COPD with recent exacerbation, CKD stage 4–5, recent stroke/MI, sepsis history, severe wounds, fall-with-injury history, anticoagulation with bleed risk).
+- Functional impact: conditions that drive ADL/IADL dependence, mobility loss, transfer assistance, ambulation limits, or assistive-device need.
+- Skilled nursing need: conditions actively requiring SN interventions (medication management/teaching, wound care, disease-process teaching, observation & assessment for instability, injection/infusion, catheter/ostomy care, glucose management, anticoagulation monitoring) — these must be elevated because they justify recertification.
+- Stability/Trajectory: worsening or newly-onset conditions outrank stable ones; recently-resolved conditions are demoted but retained.
+- Comorbidity interactions: conditions that compound risk when combined (e.g., DM + CKD + CHF) get elevated priority as a cluster.
+
+Inclusion rule: INCLUDE all non-impactful, stable, chronic-but-controlled, and resolved conditions in the deliverables. Do not omit them. Place them in lower-priority positions, group them where appropriate, and clearly label their status (e.g., "stable", "controlled", "resolved [date]", "historical, no current impact"). The prioritization affects ordering and emphasis only — never completeness.
+
+Use this priority ranking to drive: the order of items in significantPastHealthHistory, the focus of recertificationAnalysis and chartStorySummary, the lead conditions in patientSummary, and the severity assignment of redFlags.
+
+STEP 3 — DELIVERABLE COMPOSITION
+Only after Steps 1 and 2 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2. Every clinical claim must be traceable to a source document captured in Step 1.
+
+STEP 4 — AUDIT VALIDATION
+Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit where applicable ("worsened", "new onset", "stable since", "resolved on [date]"), (c) HIPAA-safe identifiers only, (d) no copy-forward filler, (e) contradictions/gaps surfaced as red flags rather than hidden, (f) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled.
 
 Comparison Rules:
 - Cross-reference the initial OASIS diagnoses against the most recent episode's diagnosis list. Flag new, resolved, or changed diagnoses.
