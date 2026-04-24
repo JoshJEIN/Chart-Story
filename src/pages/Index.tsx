@@ -149,7 +149,7 @@ export default function Index() {
           </section>
 
           {/* Analyze Button */}
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button
               size="lg"
               onClick={handleAnalyze}
@@ -167,6 +167,20 @@ export default function Index() {
                   Run PCR Recertification Analysis
                 </>
               )}
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={handleHealthCheck}
+              disabled={isCheckingHealth}
+              className="gap-2"
+            >
+              {isCheckingHealth ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Activity className="h-4 w-4" />
+              )}
+              Check Edge Function Health
             </Button>
           </div>
 
