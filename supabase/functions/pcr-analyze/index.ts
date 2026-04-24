@@ -167,6 +167,26 @@ export const handler = async (req: Request): Promise<Response> => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Lightweight health probe — verify the function is deployed and the
+  // Lovable AI key is configured WITHOUT running an analysis or calling the
+  // gateway. Accessible via GET or POST to /health (or ?health=1).
+  const url = new URL(req.url);
+  const isHealthCheck =
+    url.pathname.endsWith("/health") ||
+    url.searchParams.get("health") === "1" ||
+    req.headers.get("x-health-check") === "1";
+  if (isHealthCheck) {
+    return new Response(
+      JSON.stringify({
+        status: "ok",
+        function: "pcr-analyze",
+        hasApiKey: Boolean(Deno.env.get("LOVABLE_API_KEY")),
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     // ============================================================
     // PAYLOAD SIZE GUARDS — reject oversized requests BEFORE parsing

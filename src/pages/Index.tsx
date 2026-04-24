@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack, Settings2 } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2, Activity } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
@@ -17,7 +18,35 @@ export default function Index() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const { toast } = useToast();
+
+  const handleHealthCheck = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("pcr-analyze", {
+        body: { health: 1 },
+        headers: { "x-health-check": "1" },
+      });
+      if (error) throw error;
+      const ok = data?.status === "ok";
+      toast({
+        title: ok ? "Edge function healthy" : "Unexpected health response",
+        description: ok
+          ? `pcr-analyze deployed • API key ${data.hasApiKey ? "configured" : "MISSING"} • ${data.timestamp}`
+          : JSON.stringify(data),
+        variant: ok && data.hasApiKey ? "default" : "destructive",
+      });
+    } catch (e) {
+      toast({
+        title: "Health check failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const handleAnalyze = async () => {
     if (documents.length === 0) {
@@ -120,7 +149,7 @@ export default function Index() {
           </section>
 
           {/* Analyze Button */}
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button
               size="lg"
               onClick={handleAnalyze}
@@ -138,6 +167,20 @@ export default function Index() {
                   Run PCR Recertification Analysis
                 </>
               )}
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={handleHealthCheck}
+              disabled={isCheckingHealth}
+              className="gap-2"
+            >
+              {isCheckingHealth ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Activity className="h-4 w-4" />
+              )}
+              Check Edge Function Health
             </Button>
           </div>
 
