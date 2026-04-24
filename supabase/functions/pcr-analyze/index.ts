@@ -314,6 +314,31 @@ serve(async (req) => {
                       description:
                         "The most recent 60-day episode date range analyzed, formatted for filenames as 'YYYY-MM-DD_to_YYYY-MM-DD' (e.g., '2024-08-01_to_2024-09-29'). Extract from the OASIS, POC, or certification period in the documents. If dates cannot be determined, use 'Episode_Unknown'.",
                     },
+                    auditPass: {
+                      type: "boolean",
+                      description:
+                        "Result of STEP 6 audit validation. MUST be true on the final returned payload. Set false only during internal drafts that you then revise; never return false unless explicitly re-invoked and still unable to meet criteria.",
+                    },
+                    auditFailures: {
+                      type: "array",
+                      description:
+                        "List of failed audit criteria from STEP 6 (a)–(j). Empty array when auditPass is true.",
+                      items: {
+                        type: "object",
+                        properties: {
+                          criterion: {
+                            type: "string",
+                            description: "The criterion letter (a–j) that failed.",
+                          },
+                          reason: {
+                            type: "string",
+                            description: "One-line explanation of why this criterion failed and what must be fixed.",
+                          },
+                        },
+                        required: ["criterion", "reason"],
+                        additionalProperties: false,
+                      },
+                    },
                   },
                   required: [
                     "recertificationAnalysis",
@@ -325,6 +350,8 @@ serve(async (req) => {
                     "sourceTable",
                     "patientIdentifier",
                     "episodeRange",
+                    "auditPass",
+                    "auditFailures",
                   ],
                   additionalProperties: false,
                 },
