@@ -411,4 +411,8 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 };
 
-serve(handler);
+// Only auto-start the HTTP listener outside of test runs.
+// Tests import `handler` directly and provide their own request objects.
+if (!Deno.env.get("PCR_ANALYZE_TEST_MODE")) {
+  serve(handler);
+}
