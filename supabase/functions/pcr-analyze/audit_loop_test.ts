@@ -76,11 +76,11 @@ async function runFixture(fixtureName: keyof typeof FIXTURES, maxIterations?: nu
   // Set required env vars for the handler.
   Deno.env.set("LOVABLE_API_KEY", "test-key");
   Deno.env.set("AI_GATEWAY_URL", stub.url);
+  Deno.env.set("PCR_ANALYZE_TEST_MODE", "1");
 
-  // Import the handler AFTER env vars are set. Use a cache-busting query so
-  // each test gets a fresh module-load (handler itself reads env at call time
-  // anyway, but this keeps things hygienic).
-  const mod = await import(`./index.ts?t=${Date.now()}`);
+  // Import the handler. Module is cached after first load — that's fine because
+  // the handler reads env vars at call time.
+  const mod = await import("./index.ts");
   const handler: (req: Request) => Promise<Response> = mod.handler;
 
   const req = new Request("http://localhost/pcr-analyze", {
