@@ -73,6 +73,28 @@ export default function Index() {
             <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
           </section>
 
+          {/* Audit settings */}
+          <section className="rounded-md border border-border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-accent" />
+              <Label className="text-sm font-semibold">
+                Maximum audit retry iterations: {maxIterations}
+              </Label>
+            </div>
+            <Slider
+              value={[maxIterations]}
+              min={1}
+              max={10}
+              step={1}
+              onValueChange={(v) => setMaxIterations(v[0] ?? 3)}
+              disabled={isAnalyzing}
+            />
+            <p className="text-xs text-muted-foreground">
+              The audit loop will revise the draft until STEP 6 passes or this limit is reached.
+              Higher values increase quality but cost more time and credits.
+            </p>
+          </section>
+
           {/* Analyze Button */}
           <div className="flex justify-center">
             <Button
