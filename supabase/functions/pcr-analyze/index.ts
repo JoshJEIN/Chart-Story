@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// Use built-in Deno.serve — avoids fragile std lib imports during edge bundling.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -548,5 +548,5 @@ export const handler = async (req: Request): Promise<Response> => {
 // Only auto-start the HTTP listener outside of test runs.
 // Tests import `handler` directly and provide their own request objects.
 if (!Deno.env.get("PCR_ANALYZE_TEST_MODE")) {
-  serve(handler);
+  Deno.serve(handler);
 }
