@@ -45,7 +45,7 @@ async function startStubGateway(scripted: ScriptedAnalysis[]): Promise<StubServe
 
       return new Response(JSON.stringify(body), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "connection": "close" },
       });
     },
   );
