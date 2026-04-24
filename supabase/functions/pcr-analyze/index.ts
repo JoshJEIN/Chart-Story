@@ -162,7 +162,7 @@ Explicitly reference in your analysis:
 - Medication changes with diagnosis linkage
 - Any changes within the latest 60-day episode and within 14 days after that episode when they affect recertification support.`;
 
-serve(async (req) => {
+export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
