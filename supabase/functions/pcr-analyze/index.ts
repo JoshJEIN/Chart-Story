@@ -168,7 +168,29 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    if (!rawBody || rawBody.trim().length === 0) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Empty request body received. The upload may have been too large or the connection dropped — try fewer/smaller documents.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (parseErr) {
+      console.error("pcr-analyze: failed to parse request body", parseErr, "len=", rawBody.length);
+      return new Response(
+        JSON.stringify({
+          error:
+            "Request body was not valid JSON. The payload may have been truncated mid-upload — try analyzing fewer documents at once.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const { documents, maxIterations } = body ?? {};
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
