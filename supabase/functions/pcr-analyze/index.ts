@@ -294,7 +294,12 @@ serve(async (req) => {
       { role: "user", content: userMessage },
     ];
 
-    const MAX_AUDIT_ITERATIONS = 3;
+    // Allow caller to override the audit retry budget. Clamp to [1, 10].
+    const requestedMax =
+      typeof maxIterations === "number" && Number.isFinite(maxIterations)
+        ? Math.floor(maxIterations)
+        : 3;
+    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requestedMax));
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -304,7 +309,7 @@ serve(async (req) => {
       console.log(`pcr-analyze: audit iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
 
       const response = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        AI_GATEWAY_URL,
         {
           method: "POST",
           headers: {
