@@ -22,9 +22,17 @@ export async function analyzeDocuments(
   docs: DocumentPayload[],
   options: AnalyzeOptions = {}
 ): Promise<AnalysisResult> {
+  // Strip any extractor metadata (ok/note) before sending — the edge function
+  // only needs category/name/text.
+  const payload = docs.map((d) => ({
+    category: d.category,
+    name: d.name,
+    text: d.text,
+  }));
+
   const { data, error } = await supabase.functions.invoke("pcr-analyze", {
     body: {
-      documents: docs,
+      documents: payload,
       maxIterations: options.maxIterations,
     },
   });
