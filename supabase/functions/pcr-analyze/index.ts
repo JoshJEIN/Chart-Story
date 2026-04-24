@@ -75,11 +75,50 @@ For EACH classification, document explicitly:
 
 Output of this internal step is a "before → after" map per condition that MUST be used verbatim (paraphrased only for readability) inside recertificationAnalysis, chartStorySummary, significantPastHealthHistory, and medicationChanges. Progression language must be explicit and dated — never vague. If baseline data is missing for a condition, mark "[BASELINE NOT DOCUMENTED]" and surface it as a red flag rather than guessing.
 
-STEP 4 — DELIVERABLE COMPOSITION
-Only after Steps 1, 2, and 3 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2, and framed with the explicit "before → after" trajectory and dated medication changes from Step 3. Every clinical claim must be traceable to a source document captured in Step 1 and, where applicable, carry a progression label and dates from Step 3.
+STEP 4 — NARRATIVE SYNTHESIS (STRUCTURED OUTPUT — applies to significantPastHealthHistory and the narrative portion of patientSummary / chartStorySummary)
+After Steps 1–3, synthesize the prioritized, progression-classified findings into EXACTLY 4 paragraphs in the order below. This is the canonical structure for significantPastHealthHistory and must also drive the narrative spine of patientSummary and chartStorySummary. Do not collapse, merge, reorder, or add additional paragraphs.
 
-STEP 5 — AUDIT VALIDATION
-Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"), (c) every medication change carries a date and is linked to a diagnosis, (d) HIPAA-safe identifiers only, (e) no copy-forward filler, (f) contradictions/gaps and missing baselines surfaced as red flags rather than hidden, (g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled, (h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables.
+PARAGRAPH 1 — CORE DIAGNOSES & MAJOR HISTORY
+- List primary and secondary/high-risk diagnoses explicitly (named, not abbreviated away), with onset or most-recent-confirmation dates when available.
+- Cover major disease processes (oncology, cardiac, pulmonary, endocrine, renal, neuro, etc.).
+- Include clinically relevant historical treatments and patient visits (surgeries, radiation, chemo, prior hospitalizations, device implantations) with dates when documented.
+- Close with a concise summary of the patient chart anchoring who this patient is clinically.
+
+PARAGRAPH 2 — COMORBIDITIES
+- Group related comorbid conditions (e.g., metabolic cluster: DM + HLD + obesity; cardiorenal cluster: CHF + CKD + HTN).
+- Include only/especially conditions that impact current care, risk stratification, or function.
+- For each grouped cluster, state the compounded clinical consequence (e.g., DM + CKD + CHF amplifies fluid/glycemic instability and skilled monitoring need).
+
+PARAGRAPH 3 — CLINICAL COURSE & CHANGES SINCE LAST OASIS (MANDATORY FOCUS — most critical paragraph)
+- Open with a clear statement of clinical progression since SOC or last OASIS (which baseline is being used must be explicit).
+- Include specific dated events: medication changes (e.g., "on 04/16/2026 furosemide increased from 20 mg to 40 mg daily for worsening lower-extremity edema"), procedures, diagnostics (labs/imaging with values and dates), hospital/ED visits, specialist visits.
+- For each dated event, explicitly interpret: WHAT changed and WHY it matters clinically (risk, decompensation potential, change in skilled need, change in homebound status).
+- Use the "before → after" map from Step 3 verbatim in spirit — every major condition referenced here must carry a trajectory label (worsened / improved / stable / unstable / new onset / resolved) with dates.
+
+PARAGRAPH 4 — FUNCTIONAL IMPACT & SKILLED NEED DRIVERS
+- Link conditions → symptoms → functional limitations (e.g., "CHF exacerbation → exertional dyspnea at <10 ft → ambulation limited to bedroom-to-bathroom with rolling walker and rest breaks").
+- Clearly define homebound status with the specific clinical drivers (taxing effort, assistive device dependence, dyspnea/pain on exertion, cognitive safety risk, etc.).
+- Justify continued skilled nursing with clinical specificity: name the SN interventions required (medication titration/teaching, observation & assessment for instability, wound care, glucose management, anticoagulation monitoring, disease-process teaching) and tie each to the conditions and progression documented in paragraphs 1–3.
+
+✍️ MANDATORY LANGUAGE RULES (apply to all 4 paragraphs and to recertificationAnalysis / chartStorySummary / patientSummary narrative)
+- DO NOT use these filler/opener phrases: "Pt presents with…", "Overall clinical status reflects…", "Management is complicated by…", or any equivalent vague stem.
+- REQUIRED STYLE: direct, cause-effect clinical statements. Each sentence must answer: "Why did it matter in the past, and why does this matter clinically right now?"
+- No copy-forward boilerplate. No hedging language ("appears to", "seems to") when the source is documented — state the documented fact and cite the source.
+
+📅 DATE USAGE RULE (STRICT)
+- ALL significant changes MUST include specific dates when available in the source documents.
+- Dates should be used ONLY when tied to: medication changes, procedures, diagnostics (labs/imaging), or clinical deterioration/improvement events.
+- Do NOT decorate stable/background statements with dates. Use dates to support clinical progression and audit defense.
+- If a date is required but not documented, write "[DATE NOT DOCUMENTED]" and surface as a red flag — never fabricate a date.
+
+⚡ ENFORCEMENT RULE (HIGH IMPACT)
+- Each major condition mentioned in any paragraph MUST include at least one explicit clinical consequence: a risk (e.g., decompensation, fall, hospitalization), a progression marker (worsening lab/vital/function), or a functional impact (ADL/IADL/mobility/cognition). Conditions named without a stated consequence are non-compliant and must be revised before output.
+
+STEP 5 — DELIVERABLE COMPOSITION
+Only after Steps 1–4 are complete, compose every deliverable field (recertificationAnalysis, chartStorySummary, patientSummary, significantPastHealthHistory, redFlags, medicationChanges, sourceTable, patientIdentifier, episodeRange) using ONLY the extracted facts from Step 1, ordered and emphasized per the prioritization from Step 2, framed with the explicit "before → after" trajectory and dated medication changes from Step 3, and structured per the 4-paragraph synthesis and language/date/enforcement rules from Step 4. Every clinical claim must be traceable to a source document captured in Step 1 and, where applicable, carry a progression label and dates from Step 3.
+
+STEP 6 — AUDIT VALIDATION
+Before returning, internally verify: (a) no claim lacks a source, (b) progression language is explicit and dated for every prioritized condition ("worsened from X on [date] to Y on [date]", "new onset [date]", "stable since [date]", "resolved on [date]", "unstable — [events with dates]"), (c) every medication change carries a date and is linked to a diagnosis, (d) HIPAA-safe identifiers only, (e) no copy-forward filler and none of the banned opener phrases from Step 4, (f) contradictions/gaps and missing baselines/dates surfaced as red flags rather than hidden, (g) high-risk and skilled-need-driving conditions appear first in each section while non-impactful and resolved conditions are still present and clearly labeled, (h) the "before → after" reasoning from Step 3 is visible in the narrative deliverables, (i) significantPastHealthHistory contains EXACTLY the 4 paragraphs from Step 4 in the prescribed order, (j) every major condition named in any paragraph carries at least one explicit clinical consequence per the Step 4 enforcement rule.
 
 Comparison Rules:
 - Cross-reference the initial OASIS diagnoses against the most recent episode's diagnosis list. Flag new, resolved, or changed diagnoses.
