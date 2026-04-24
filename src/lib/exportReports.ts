@@ -209,7 +209,7 @@ export function generateAuditQAReport(result: AnalysisResult): void {
   downloadTextFile(lines.join("\n"), buildFilename("PCR_Audit_QA_Report", result));
 }
 
-
+function padRow(a: string, b: string, c: string, d: string): string {
   return `${a.substring(0, 30).padEnd(32)}${b.substring(0, 20).padEnd(22)}${c.padEnd(14)}${d}`;
 }
 
