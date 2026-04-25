@@ -361,10 +361,43 @@ export default function Index() {
                   />
                 </div>
               </div>
+
+              {pocFreq && !freqMatchesPoc && (
+                <div className="rounded-md border border-flag/40 bg-flag/5 p-3 space-y-2">
+                  <Label className="text-xs font-semibold text-flag">
+                    Verbal Order Reference (required when frequency differs from POC)
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <Input
+                      type="date"
+                      value={verbalOrderDate}
+                      onChange={(e) => setVerbalOrderDate(e.target.value)}
+                      placeholder="VO date"
+                      disabled={isAnalyzing}
+                    />
+                    <Input
+                      value={verbalOrderMd}
+                      onChange={(e) => setVerbalOrderMd(e.target.value)}
+                      placeholder="Ordering MD"
+                      disabled={isAnalyzing}
+                    />
+                    <Input
+                      value={verbalOrderContent}
+                      onChange={(e) => setVerbalOrderContent(e.target.value)}
+                      placeholder='VO content (e.g. "change SN to 2w3,1w6,1w4")'
+                      disabled={isAnalyzing}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    The verbal order will be cited verbatim in visit #1 coordination-of-care and in the pre-claim checklist.
+                  </p>
+                </div>
+              )}
+
               <p className="text-xs text-muted-foreground">
                 Cert period: <span className="font-mono">{buildCertPeriod(socStartDate).startDate}</span> →{" "}
                 <span className="font-mono">{buildCertPeriod(socStartDate).endDate}</span> · Parsed visits:{" "}
-                <span className="font-mono">{parseFrequencyString(frequencyRaw).totalVisitsScheduled}</span>
+                <span className="font-mono">{userFreq.totalVisitsScheduled}</span>
               </p>
             </section>
           )}
