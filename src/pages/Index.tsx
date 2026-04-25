@@ -36,6 +36,7 @@ export default function Index() {
   const [socResult, setSocResult] = useState<SocAnalysisResult | null>(null);
   const [seriesResult, setSeriesResult] = useState<SnSeriesResult | null>(null);
   const [recertSeriesResult, setRecertSeriesResult] = useState<RecertSeriesResult | null>(null);
+  const [draftResult, setDraftResult] = useState<SnSingleVisitDraft | null>(null);
   const [pastedPriorSeriesJson, setPastedPriorSeriesJson] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
@@ -50,6 +51,16 @@ export default function Index() {
   const [verbalOrderDate, setVerbalOrderDate] = useState<string>("");
   const [verbalOrderMd, setVerbalOrderMd] = useState<string>("");
   const [verbalOrderContent, setVerbalOrderContent] = useState<string>("");
+
+  // Single-visit draft inputs (used by snQuickDraft + snRecertDraft)
+  const [draftVisitDate, setDraftVisitDate] = useState<string>(today);
+  const [draftVisitNumber, setDraftVisitNumber] = useState<string>("");
+  const [draftWeekOfEpisode, setDraftWeekOfEpisode] = useState<string>("");
+  const [draftPatientContext, setDraftPatientContext] = useState<string>("");
+  const [draftSourceText, setDraftSourceText] = useState<string>("");
+  const [draftTeachingFocus, setDraftTeachingFocus] = useState<string>("");
+  const [draftPatientId, setDraftPatientId] = useState<string>("");
+  const [draftPatientName, setDraftPatientName] = useState<string>("");
 
   const { toast } = useToast();
 
