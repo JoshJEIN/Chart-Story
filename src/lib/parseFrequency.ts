@@ -188,15 +188,18 @@ export function lupaRiskFor(visitsCompleted: number, threshold: number | null) {
 }
 
 // Find the SN entry in a POC's disciplineOrders[] and return its frequencyDuration string,
-// plus a parsed FrequencyOrder for direct comparison.
+// plus a parsed FrequencyOrder for direct comparison and a canonical "NwN, NwN"
+// form derived from natural-language orders ("BIW x 8 weeks" → "2w8").
 export function extractSnFrequencyFromPOC(
   disciplineOrders: SocDisciplineOrder[] | undefined | null,
-): { raw: string; parsed: FrequencyOrder } | null {
+): { raw: string; canonical: string; parsed: FrequencyOrder } | null {
   if (!disciplineOrders || disciplineOrders.length === 0) return null;
   const sn = disciplineOrders.find((d) => /^sn\b|skilled\s*nursing/i.test(d.discipline ?? ""));
   if (!sn || !sn.frequencyDuration) return null;
   const raw = sn.frequencyDuration.trim();
-  return { raw, parsed: parseFrequencyString(raw) };
+  const canonical = normalizeFrequencyString(raw);
+  const parsed = parseFrequencyString(raw);
+  return { raw, canonical, parsed };
 }
 
 // Compares two parsed frequency totals (POC vs user-typed). Used for the
