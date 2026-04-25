@@ -7,12 +7,83 @@ import type { SocDisciplineOrder } from "@/types/soc";
 const BLOCK_RE = /(\d+)\s*[wW]\s*(\d+)/g;
 const DISCIPLINE_RE = /^(SN|PT|OT|ST|MSW|HHA)\s*:/i;
 
+// Words that mean "visits per week" in plain-English physician orders.
+const VPW_WORDS: Record<string, number> = {
+  qd: 7, daily: 7,
+  qod: 4, // every other day ≈ 3-4/wk; we round up to be safe for scheduling
+  weekly: 1, qw: 1,
+  biw: 2, "bi-weekly": 2, "twice weekly": 2, "twice a week": 2, "two times a week": 2, "two times weekly": 2,
+  tiw: 3, "three times weekly": 3, "three times a week": 3, "thrice weekly": 3,
+  qiw: 4, "four times weekly": 4, "four times a week": 4,
+  "five times weekly": 5, "five times a week": 5,
+};
+
+// Normalize a natural-language frequency segment (e.g. "BIW x 8 weeks",
+// "2 visits/week for 8 weeks", "weekly x 9 wks", "1v/wk x 9wks") to a
+// canonical "NwN" or "NwN, NwN" string that the strict regex understands.
+// Returns the input unchanged if it already contains NwN tokens.
+export function normalizeFrequencyString(raw: string): string {
+  const input = (raw || "").trim();
+  if (!input) return "";
+  // If it already contains NwN-style blocks anywhere, treat as canonical
+  // (the strict parser will pick them up as-is).
+  if (/\d+\s*[wW]\s*\d+/.test(input)) return input;
+
+  // Split on common separators ("then", ";", ","). Slashes are reserved for
+  // discipline separators in the strict parser, but in plain English they
+  // often mean "per" (e.g. "2 visits/week"), so we keep them inside segments.
+  const segments = input
+    .split(/\s*(?:then|;|,)\s+/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const canonical: string[] = [];
+  for (const seg of segments.length ? segments : [input]) {
+    const lower = seg.toLowerCase();
+    // Pull "x N week(s)" / "for N week(s)" / "N wks"
+    const weeksMatch =
+      lower.match(/(?:x|for|times)\s*(\d+)\s*(?:week|wk)s?/) ||
+      lower.match(/(\d+)\s*(?:week|wk)s?\b/);
+    const weeks = weeksMatch ? parseInt(weeksMatch[1], 10) : NaN;
+
+    // Strip the duration phrase so the visits-per-week search can't pick up
+    // the "8" from "x 8 weeks". Also strip standalone "N weeks".
+    const vpwSearch = lower
+      .replace(/(?:x|for|times)\s*\d+\s*(?:week|wk)s?/g, " ")
+      .replace(/\b\d+\s*(?:week|wk)s?\b/g, " ");
+
+    // Find visits per week.
+    let vpw: number = NaN;
+    // Numeric: "2 visits/week", "2v/wk", "3 times per week", "3x/wk"
+    const numericVpw = vpwSearch.match(
+      /(\d+)\s*(?:v(?:isits?)?|times?|x)?\s*(?:\/|per|a)?\s*(?:wk|week)/,
+    );
+    if (numericVpw) vpw = parseInt(numericVpw[1], 10);
+    // Word-based ("BIW", "TIW", "weekly", "daily", ...)
+    if (!Number.isFinite(vpw)) {
+      for (const [word, n] of Object.entries(VPW_WORDS)) {
+        const re = new RegExp(`\\b${word.replace(/-/g, "[\\s-]?")}\\b`, "i");
+        if (re.test(vpwSearch)) { vpw = n; break; }
+      }
+    }
+
+    if (Number.isFinite(vpw) && Number.isFinite(weeks) && vpw > 0 && weeks > 0) {
+      canonical.push(`${vpw}w${weeks}`);
+    }
+  }
+
+  return canonical.length ? canonical.join(", ") : input;
+}
+
 export function parseFrequencyString(raw: string, defaultDiscipline = "SN"): FrequencyOrder {
   const cleaned = (raw || "").trim();
-  const segments = cleaned.split("/").map((s) => s.trim()).filter(Boolean);
+  // Normalize plain-English orders before strict parsing. We preserve the
+  // user's original string in `raw` so the UI shows what they typed.
+  const normalized = normalizeFrequencyString(cleaned);
+  const segments = normalized.split("/").map((s) => s.trim()).filter(Boolean);
   const blocks: FrequencyBlock[] = [];
 
-  for (const seg of segments.length ? segments : [cleaned]) {
+  for (const seg of segments.length ? segments : [normalized]) {
     let discipline = defaultDiscipline;
     let body = seg;
     const m = seg.match(DISCIPLINE_RE);
@@ -123,15 +194,18 @@ export function lupaRiskFor(visitsCompleted: number, threshold: number | null) {
 }
 
 // Find the SN entry in a POC's disciplineOrders[] and return its frequencyDuration string,
-// plus a parsed FrequencyOrder for direct comparison.
+// plus a parsed FrequencyOrder for direct comparison and a canonical "NwN, NwN"
+// form derived from natural-language orders ("BIW x 8 weeks" → "2w8").
 export function extractSnFrequencyFromPOC(
   disciplineOrders: SocDisciplineOrder[] | undefined | null,
-): { raw: string; parsed: FrequencyOrder } | null {
+): { raw: string; canonical: string; parsed: FrequencyOrder } | null {
   if (!disciplineOrders || disciplineOrders.length === 0) return null;
   const sn = disciplineOrders.find((d) => /^sn\b|skilled\s*nursing/i.test(d.discipline ?? ""));
   if (!sn || !sn.frequencyDuration) return null;
   const raw = sn.frequencyDuration.trim();
-  return { raw, parsed: parseFrequencyString(raw) };
+  const canonical = normalizeFrequencyString(raw);
+  const parsed = parseFrequencyString(raw);
+  return { raw, canonical, parsed };
 }
 
 // Compares two parsed frequency totals (POC vs user-typed). Used for the

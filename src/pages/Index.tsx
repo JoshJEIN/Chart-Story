@@ -52,9 +52,13 @@ export default function Index() {
 
   // Derived: POC frequency from the SOC result, if any
   const pocFreq = socResult ? extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders) : null;
+  const pocCanonical = pocFreq?.canonical ?? pocFreq?.raw ?? "";
   const userFreq = parseFrequencyString(frequencyRaw);
+  const normalizedInput = frequencyRaw.trim().toLowerCase().replace(/\s+/g, " ");
   const freqMatchesPoc =
-    !!pocFreq && pocFreq.raw.trim().toLowerCase() === frequencyRaw.trim().toLowerCase();
+    !!pocFreq &&
+    (pocFreq.raw.trim().toLowerCase() === normalizedInput ||
+      pocCanonical.trim().toLowerCase() === normalizedInput);
   const verbalOrderProvided = Boolean(
     verbalOrderDate && verbalOrderMd.trim() && verbalOrderContent.trim(),
   );
@@ -78,7 +82,9 @@ export default function Index() {
     if (next === "snSeries" && socResult) {
       const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
       if (fromPoc && fromPoc.parsed.totalVisitsScheduled > 0) {
-        setFrequencyRaw(fromPoc.raw);
+        // Prefer the canonical form so the input is always parseable, even
+        // when the POC stored a natural-language order ("BIW x 8 weeks").
+        setFrequencyRaw(fromPoc.canonical || fromPoc.raw);
       }
     }
   };
@@ -461,7 +467,7 @@ export default function Index() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setFrequencyRaw(pocFreq.raw)}
+                        onClick={() => setFrequencyRaw(pocCanonical || pocFreq.raw)}
                         disabled={isAnalyzing || freqMatchesPoc}
                       >
                         Use POC
@@ -470,7 +476,10 @@ export default function Index() {
                   </div>
                   {pocFreq && (
                     <p className={`mt-1 text-xs ${freqMatchesPoc ? "text-muted-foreground" : "text-flag"}`}>
-                      485 POC orders <span className="font-mono">{pocFreq.raw}</span>{" "}
+                      485 POC orders <span className="font-mono">{pocFreq.raw}</span>
+                      {pocCanonical && pocCanonical !== pocFreq.raw && (
+                        <> → <span className="font-mono">{pocCanonical}</span></>
+                      )}{" "}
                       ({pocFreq.parsed.totalVisitsScheduled} SN visits).{" "}
                       {freqMatchesPoc
                         ? "✓ Matches physician orders."
