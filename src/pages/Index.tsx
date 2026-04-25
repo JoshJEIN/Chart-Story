@@ -13,6 +13,7 @@ import DocumentUploader from "@/components/DocumentUploader";
 import AnalysisDisplay from "@/components/AnalysisDisplay";
 import AdmissionAnalysisDisplay from "@/components/AdmissionAnalysisDisplay";
 import SnVisitSeriesDisplay from "@/components/SnVisitSeriesDisplay";
+import SnSingleVisitDisplay from "@/components/SnSingleVisitDisplay";
 import { UploadedDocument, AnalysisResult } from "@/types/pcr";
 import { SocAnalysisResult } from "@/types/soc";
 import { SnSeriesResult } from "@/types/snSeries";
@@ -21,10 +22,12 @@ import { analyzeDocuments } from "@/lib/analyzeDocuments";
 import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
 import { analyzeSnVisitSeries } from "@/lib/analyzeSnSeries";
 import { analyzeRecertVisitSeries } from "@/lib/analyzeRecertSeries";
+import { analyzeSnVisitDraft } from "@/lib/analyzeSnVisitDraft";
 import { parseFrequencyString, buildCertPeriod, extractSnFrequencyFromPOC } from "@/lib/parseFrequency";
 import type { RecertSeriesResult } from "@/types/recertSeries";
+import type { SnSingleVisitDraft } from "@/types/snVisitDraft";
 
-type AnalysisMode = "recert" | "soc" | "snSeries" | "recertSeries";
+type AnalysisMode = "recert" | "soc" | "snSeries" | "recertSeries" | "snQuickDraft" | "snRecertDraft";
 
 export default function Index() {
   const [mode, setMode] = useState<AnalysisMode>("recert");
