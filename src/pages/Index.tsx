@@ -82,7 +82,9 @@ export default function Index() {
     if (next === "snSeries" && socResult) {
       const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
       if (fromPoc && fromPoc.parsed.totalVisitsScheduled > 0) {
-        setFrequencyRaw(fromPoc.raw);
+        // Prefer the canonical form so the input is always parseable, even
+        // when the POC stored a natural-language order ("BIW x 8 weeks").
+        setFrequencyRaw(fromPoc.canonical || fromPoc.raw);
       }
     }
   };
