@@ -931,6 +931,22 @@ export default function Index() {
               </div>
             </>
           )}
+          {draftResult && (
+            <>
+              <SnSingleVisitDisplay draft={draftResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setDraftResult(null)}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  Clear Draft
+                </Button>
+              </div>
+            </>
+          )}
         </motion.div>
       </main>
     </div>
