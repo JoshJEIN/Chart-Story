@@ -1,4 +1,5 @@
 import { AnalysisResult } from "@/types/pcr";
+import { SocAnalysisResult } from "@/types/soc";
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   new: "New",
@@ -309,6 +310,215 @@ function downloadTextFile(content: string, filename: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// =====================================================================
+// START-OF-CARE (ADMISSION) EXPORTERS
+// =====================================================================
+
+const SOC_MAJOR = "=".repeat(70);
+const SOC_MINOR = "-".repeat(70);
+
+function buildSocFilename(prefix: string, result: SocAnalysisResult): string {
+  const pt = sanitizeForFilename(result.patientFullName || result.patientIdentifier || "Unknown_Pt");
+  const ep = sanitizeForFilename(result.episodeInfo?.episodeLabel || "Episode_SOC");
+  const gen = formatFileDate(result.generatedAt);
+  return `${prefix}_${pt}_${ep}_generated_${gen}.txt`;
+}
+
+function socHeader(title: string, result: SocAnalysisResult): string[] {
+  return [
+    SOC_MAJOR,
+    title,
+    SOC_MAJOR,
+    `Patient: ${result.patientIdentifier || "Unknown"}`,
+    `Episode: ${result.episodeInfo?.episodeLabel || "—"}`,
+    `Cert Period: ${result.episodeInfo?.certPeriodDates || "—"}`,
+    `Generated: ${result.generatedAt.toLocaleDateString()}`,
+    SOC_MAJOR,
+    "",
+  ];
+}
+
+export function generateSocAdmissionChartStory(result: SocAnalysisResult): void {
+  const lines = socHeader("ADMISSION CHART STORY & SIGNIFICANT PMHx", result);
+  lines.push("ADMISSION CHART STORY");
+  lines.push(SOC_MINOR);
+  lines.push(stripBullets(result.admissionChartStory || "(none)"));
+  lines.push("");
+  lines.push(SOC_MAJOR);
+  lines.push("SIGNIFICANT PAST HEALTH HISTORY");
+  lines.push(SOC_MINOR);
+  lines.push(stripBullets(result.significantPastHealthHistory || "(none)"));
+  lines.push("");
+  lines.push(SOC_MAJOR);
+  lines.push("SOURCE-TO-DOCUMENTATION TABLE");
+  lines.push(SOC_MINOR);
+  lines.push(padRow("Finding", "Source", "Date", "Category"));
+  lines.push(SOC_MINOR);
+  (result.sourceTable || []).forEach((e) => {
+    lines.push(padRow(stripBullets(e.finding || ""), stripBullets(e.sourceDocument || ""), e.date || "", e.category || ""));
+  });
+  downloadTextFile(lines.join("\n"), buildSocFilename("SOC_Admission_Chart_Story", result));
+}
+
+export function generateSocPlanOfCareReport(result: SocAnalysisResult): void {
+  const poc = result.planOfCare;
+  const lines = socHeader("PLAN OF CARE — 485-ALIGNED (ADMISSION)", result);
+  lines.push("PRIMARY DIAGNOSIS");
+  lines.push(SOC_MINOR);
+  lines.push(poc?.primaryDx || "(none)");
+  lines.push("");
+  lines.push("SECONDARY DIAGNOSES");
+  lines.push(SOC_MINOR);
+  (poc?.secondaryDx || []).forEach((d) => lines.push(`• ${d}`));
+  if (!poc?.secondaryDx?.length) lines.push("(none documented)");
+  lines.push("");
+  lines.push("HOMEBOUND JUSTIFICATION");
+  lines.push(SOC_MINOR);
+  lines.push(poc?.homeboundJustification || "(none)");
+  lines.push("");
+  lines.push("SKILLED NEED RATIONALE");
+  lines.push(SOC_MINOR);
+  lines.push(poc?.skilledNeedRationale || "(none)");
+  lines.push("");
+  lines.push("MEASURABLE GOALS (timed)");
+  lines.push(SOC_MINOR);
+  (poc?.measurableGoals || []).forEach((g, i) => lines.push(`${i + 1}. ${g}`));
+  lines.push("");
+  lines.push("DISCIPLINE ORDERS");
+  lines.push(SOC_MINOR);
+  (poc?.disciplineOrders || []).forEach((d) => {
+    lines.push(`${d.discipline} — ${d.frequencyDuration}`);
+    lines.push(`  Interventions: ${d.interventions}`);
+    lines.push("");
+  });
+  lines.push("DME / SUPPLIES");
+  lines.push(SOC_MINOR);
+  lines.push(poc?.dmeSupplies || "(none)");
+  lines.push("");
+  lines.push("DISCHARGE PLANNING");
+  lines.push(SOC_MINOR);
+  lines.push(poc?.dischargePlanning || "(none)");
+  lines.push("");
+  if (result.medicationReconciliation?.length) {
+    lines.push("MEDICATION RECONCILIATION FLAGS");
+    lines.push(SOC_MINOR);
+    result.medicationReconciliation.forEach((m, i) => {
+      lines.push(`${i + 1}. ${m.medication}`);
+      lines.push(`   Issue: ${m.issue}`);
+      lines.push(`   Recommendation: ${m.recommendation}`);
+      lines.push(`   Source: ${m.sourceDocument}`);
+      lines.push("");
+    });
+  }
+  downloadTextFile(lines.join("\n"), buildSocFilename("SOC_Plan_of_Care", result));
+}
+
+export function generateSocFirstVisitNote(result: SocAnalysisResult): void {
+  const v = result.firstSnVisitNote;
+  const lines = socHeader("FIRST SN VISIT NOTE — TEMPLATE (clinician to edit & sign)", result);
+  lines.push("SUBJECTIVE");
+  lines.push(SOC_MINOR);
+  lines.push(v?.subjective || "(none)");
+  lines.push("");
+  lines.push("OBJECTIVE — assessment focus");
+  lines.push(SOC_MINOR);
+  (v?.objectiveFocus || []).forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("ASSESSMENT");
+  lines.push(SOC_MINOR);
+  lines.push(v?.assessment || "(none)");
+  lines.push("");
+  lines.push("PLAN — interventions");
+  lines.push(SOC_MINOR);
+  (v?.plannedInterventions || []).forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("TEACHING TOPICS (Visit 1 priorities)");
+  lines.push(SOC_MINOR);
+  (v?.teachingTopics || []).forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("SAFETY CHECKS");
+  lines.push(SOC_MINOR);
+  (v?.safetyChecks || []).forEach((x) => lines.push(`• ${x}`));
+  lines.push("");
+  lines.push("SKILLED JUSTIFICATION");
+  lines.push(SOC_MINOR);
+  lines.push(v?.skilledJustification || "(none)");
+  downloadTextFile(lines.join("\n"), buildSocFilename("SOC_First_SN_Visit_Note", result));
+}
+
+export function generateSocEducationPlan(result: SocAnalysisResult): void {
+  const lines = socHeader("PATIENT / CAREGIVER EDUCATION PLAN", result);
+  if (!result.educationPlan?.length) {
+    lines.push("(no education topics generated)");
+    downloadTextFile(lines.join("\n"), buildSocFilename("SOC_Education_Plan", result));
+    return;
+  }
+  result.educationPlan.forEach((e, i) => {
+    lines.push(`TOPIC ${i + 1}: ${e.topic}`);
+    lines.push(SOC_MINOR);
+    lines.push(`Linked to: ${e.linkedDiagnosisOrMed}`);
+    lines.push("");
+    lines.push("Why it matters:");
+    lines.push(e.whyItMatters || "");
+    lines.push("");
+    lines.push("Full explanation (chart-ready teaching narrative):");
+    lines.push(e.fullExplanation || "");
+    lines.push("");
+    if (e.signsToWatch?.length) {
+      lines.push("Signs to watch for:");
+      e.signsToWatch.forEach((s) => lines.push(`  • ${s}`));
+      lines.push("");
+    }
+    if (e.dietaryGuidance) {
+      lines.push("Dietary guidance:");
+      lines.push(e.dietaryGuidance);
+      lines.push("");
+    }
+    if (e.medGuidance) {
+      lines.push("Medication guidance:");
+      lines.push(e.medGuidance);
+      lines.push("");
+    }
+    if (e.teachBackQuestions?.length) {
+      lines.push("Teach-back questions:");
+      e.teachBackQuestions.forEach((q, j) => lines.push(`  ${j + 1}. ${q}`));
+      lines.push("");
+    }
+    lines.push(SOC_MAJOR);
+    lines.push("");
+  });
+  downloadTextFile(lines.join("\n"), buildSocFilename("SOC_Education_Plan", result));
+}
+
+export function generateSocAuditQAJSON(result: SocAnalysisResult): void {
+  const payload = {
+    patientIdentifier: result.patientIdentifier,
+    episodeInfo: result.episodeInfo,
+    generatedAt: result.generatedAt.toISOString(),
+    auditPass: result.auditPass ?? null,
+    auditFailures: result.auditFailures ?? [],
+    auditMeta: result.auditMeta ?? null,
+    revisedDraft: {
+      admissionChartStory: result.admissionChartStory,
+      significantPastHealthHistory: result.significantPastHealthHistory,
+      planOfCare: result.planOfCare,
+      firstSnVisitNote: result.firstSnVisitNote,
+      educationPlan: result.educationPlan,
+    },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.txt$/, ".json");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
