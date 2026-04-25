@@ -8,8 +8,10 @@ export default function ReviewHeader() {
           <Shield className="h-5 w-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">PCR Recertification Review</h1>
-          <p className="text-xs text-muted-foreground">Medicare Home Health Pre-Claim Review Analysis</p>
+          <h1 className="text-lg font-semibold tracking-tight">Chart Story</h1>
+          <p className="text-xs text-muted-foreground">
+            Audit-ready home health documentation — Recertification, SOC admission, and 60-day SN visit series
+          </p>
         </div>
       </div>
     </header>
