@@ -386,13 +386,13 @@ export default function Index() {
             </RadioGroup>
           </section>
 
-          {/* Upload Section — hidden in SN Series mode */}
-          {!isSeries && (
+          {/* Upload Section — hidden in SN Series (post-SOC) mode */}
+          {isUploadMode && (
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <FileStack className="h-5 w-5 text-accent" />
                 <h2 className="text-base font-semibold">
-                  {isSoc ? "Upload Admission Packet" : "Upload Recertification Packet"}
+                  {isSoc ? "Upload Admission Packet" : isRecertSeries ? "Upload Recertification Packet" : "Upload Recertification Packet"}
                 </h2>
               </div>
               <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
