@@ -117,6 +117,14 @@ export default function Index() {
       });
       return;
     }
+    if (!freqGateOk) {
+      toast({
+        title: "Frequency does not match physician orders",
+        description: `POC orders "${pocFreq?.raw}" but you entered "${frequencyRaw}". Either use the POC frequency or supply a verbal order (date, MD, content).`,
+        variant: "destructive",
+      });
+      return;
+    }
     const certPeriod = buildCertPeriod(socStartDate);
     setIsAnalyzing(true);
     setSeriesResult(null);
@@ -127,6 +135,10 @@ export default function Index() {
           period1: lupaPeriod1 ? parseInt(lupaPeriod1, 10) : null,
           period2: lupaPeriod2 ? parseInt(lupaPeriod2, 10) : null,
         },
+        expectedFrequencyFromPOC: pocFreq?.raw ?? null,
+        verbalOrder: verbalOrderProvided
+          ? { date: verbalOrderDate, orderingMd: verbalOrderMd.trim(), content: verbalOrderContent.trim() }
+          : null,
       });
       setSeriesResult(result);
       toast({ title: "SN visit series generated", description: `${result.visits?.length ?? 0} visit notes ready for review.` });
