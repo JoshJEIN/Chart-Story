@@ -140,11 +140,19 @@ export interface SnPreClaimChecklist {
   notes: string;
 }
 
+export interface SnVerbalOrder {
+  date: string;            // ISO date verbal order received
+  orderingMd: string;      // physician name
+  content: string;         // exact wording of the verbal order
+}
+
 export interface SnSeriesResult {
   patientIdentifier: string;
   patientFullName: string;
   certPeriod: CertPeriod;
   frequencyOrder: FrequencyOrder;
+  expectedFrequencyFromPOC?: string | null;
+  verbalOrder?: SnVerbalOrder | null;
   planOfCare: SocPlanOfCare;
   educationTopics: SnEducationTopic[];
   visits: SnVisit[];

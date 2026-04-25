@@ -1,11 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { SocAnalysisResult } from "@/types/soc";
 import type {
   CertPeriod,
   FrequencyOrder,
   SnSeriesResult,
   SnVerbalOrder,
 } from "@/types/snSeries";
+import type { RecertSeriesResult } from "@/types/recertSeries";
 import { buildVisitSchedule } from "@/lib/parseFrequency";
 import { buildEducationLog, findEducationRepetitionViolations } from "@/lib/educationAdvancement";
 import { auditObjectiveFindings } from "@/lib/objectiveFindingsAudit";
@@ -13,37 +13,37 @@ import { auditObjectiveFindings } from "@/lib/objectiveFindingsAudit";
 interface AnalyzeOptions {
   maxIterations?: number;
   lupaThresholds?: { period1?: number | null; period2?: number | null };
-  expectedFrequencyFromPOC?: string | null;
   verbalOrder?: SnVerbalOrder | null;
+  priorSeries?: SnSeriesResult | null;
 }
 
-export async function analyzeSnVisitSeries(
-  socResult: SocAnalysisResult,
+interface ParsedDoc { name: string; text: string; }
+
+export async function analyzeRecertVisitSeries(
+  documents: ParsedDoc[],
   certPeriod: CertPeriod,
   frequencyOrder: FrequencyOrder,
   options: AnalyzeOptions = {},
-): Promise<SnSeriesResult> {
+): Promise<RecertSeriesResult> {
   const schedule = buildVisitSchedule(certPeriod.startDate, frequencyOrder.parsed);
 
-  const { data, error } = await supabase.functions.invoke("sn-series-analyze", {
+  const { data, error } = await supabase.functions.invoke("recert-series-analyze", {
     body: {
-      socResult,
+      documents,
       schedule,
       certPeriod,
       frequencyOrder,
       lupaThresholds: options.lupaThresholds ?? null,
       maxIterations: options.maxIterations,
-      expectedFrequencyFromPOC: options.expectedFrequencyFromPOC ?? null,
       verbalOrder: options.verbalOrder ?? null,
+      priorSeries: options.priorSeries ?? null,
     },
   });
 
-  if (error) throw new Error(error.message || "SN series analysis failed");
+  if (error) throw new Error(error.message || "Recert series analysis failed");
 
-  const result = data as SnSeriesResult & { _auditMeta?: SnSeriesResult["auditMeta"] };
+  const result = data as RecertSeriesResult & { _auditMeta?: SnSeriesResult["auditMeta"] };
 
-  // Deterministic post-processing: rebuild education log + run anti-clone comparator,
-  // merge any deterministic failures into the longitudinal audit.
   const visits = result.visits ?? [];
   const educationTopics = result.educationTopics ?? [];
 
@@ -58,37 +58,46 @@ export async function analyzeSnVisitSeries(
     offendingVisitIds: r.visitIds,
   }));
 
-  // Deterministic POC frequency match check (mirrors edge audit criterion k).
-  const freqFailures: SnSeriesResult["longitudinalAudit"]["failures"] = [];
-  if (
-    options.expectedFrequencyFromPOC &&
-    options.expectedFrequencyFromPOC.trim() !== frequencyOrder.raw.trim() &&
-    !options.verbalOrder
-  ) {
-    freqFailures.push({
-      code: "FREQ_POC_MISMATCH",
-      severity: "high",
-      message: `Frequency "${frequencyOrder.raw}" does not match physician-ordered frequency "${options.expectedFrequencyFromPOC}" and no verbal order was supplied.`,
-      offendingVisitIds: [],
-    });
+  // Deterministic check: no mastered prior topic appears as primary in any new visit.
+  const masteredIds = new Set(
+    (options.priorSeries?.educationLog ?? [])
+      .filter((e) => !!e.masteredAt)
+      .map((e) => e.topicId),
+  );
+  const masteryViolations: { code: string; severity: "high"; message: string; offendingVisitIds: string[] }[] = [];
+  for (const v of visits) {
+    const primary = v.educationDelivered?.[0];
+    if (primary && masteredIds.has(primary.topicId)) {
+      masteryViolations.push({
+        code: "RECERT_MASTERED_TOPIC_RETAUGHT",
+        severity: "high",
+        message: `Topic ${primary.topicId} was mastered in the prior episode but is being re-taught as primary on visit ${v.visitId}.`,
+        offendingVisitIds: [v.visitId],
+      });
+    }
   }
 
   const mergedFailures = [
     ...(result.longitudinalAudit?.failures ?? []),
     ...cloneFailures,
     ...repetitionFailures,
-    ...freqFailures,
+    ...masteryViolations,
   ];
 
   return {
     ...result,
-    expectedFrequencyFromPOC: options.expectedFrequencyFromPOC ?? null,
-    verbalOrder: options.verbalOrder ?? null,
     educationLog: recomputedLog,
     longitudinalAudit: {
       pass: mergedFailures.length === 0,
       failures: mergedFailures,
     },
+    priorEpisodeRef: {
+      certStartDate: options.priorSeries?.certPeriod?.startDate ?? null,
+      certEndDate: options.priorSeries?.certPeriod?.endDate ?? null,
+      visitsCompleted: options.priorSeries?.visits?.length ?? 0,
+      summarySource: options.priorSeries ? "auto-from-state" : "none",
+    },
+    priorEducationLog: options.priorSeries?.educationLog ?? [],
     auditMeta: result._auditMeta ?? result.auditMeta,
     generatedAt: new Date(),
   };

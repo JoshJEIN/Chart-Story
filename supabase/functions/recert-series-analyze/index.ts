@@ -1,6 +1,15 @@
-// SN Visit Series Generator — produces the entire 60-day cert-period of SN visit
-// notes from a prior SOC analysis + a parsed physician-orders frequency string.
-// Mirrors the security/CORS/health-probe patterns of soc-analyze and pcr-analyze.
+// Recert Visit Series — generates SN visit notes for a SUBSEQUENT 60-day cert period
+// from a recertification document packet plus (optionally) the prior episode's series result
+// for education continuity.
+//
+// Pipeline (single LLM call with tool-calling, then audit loop):
+//   1. Read fresh recert packet text (Recert OASIS, updated 485 POC, latest MD orders,
+//      med profile, specialist notes, labs, recent SN/SOAP notes)
+//   2. Build refreshed planOfCare (no discharge planning)
+//   3. Reconcile education topics: drop mastered, carry forward in-progress, add new
+//   4. Generate the entire 60-day SN visit series with the same audit gates as sn-series-analyze
+//
+// Mirrors security/CORS/health probe patterns of the other edge functions.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,73 +17,86 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-health-check, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are a Medicare home health Skilled Nursing visit-series planner for a Texas home health agency. You will receive (1) a completed Start-of-Care (SOC) analysis JSON for the patient (Plan of Care, education topics, red flags, source table) and (2) a pre-computed visit schedule covering the 60-day certification period.
+const SYSTEM_PROMPT = `You are a Medicare home health Skilled Nursing visit-series planner for a Texas home health agency, generating documentation for a RECERTIFICATION (subsequent) 60-day cert period — NOT a Start of Care.
 
-Your job: generate every SN visit note for the entire 60-day cert period as audit-defensible billable drafts that will survive pre-claim review (PCR), TPE, UPIC, and final-claim reviews.
+You will receive (1) raw text of the recertification packet (Recert OASIS, updated 485 / Plan of Care, most recent physician orders, medication profile, specialist visits, lab work, recent SN/SOAP notes), (2) a pre-computed visit schedule covering the new 60-day cert period, and (3) OPTIONAL prior-episode context: the prior cert's planOfCare summary, its educationTopics, its educationLog (with masteredAt timestamps), and the prior episode's most recent visit summary.
 
-You MUST use the sn_visit_series tool to return findings.
+Your job: produce the FULL 60-day cert period of SN visit notes plus a refreshed Plan of Care, plus a reconciled flat education topic list, all as audit-defensible billable drafts that survive PCR / TPE / UPIC / final-claim review.
+
+You MUST use the recert_visit_series tool to return findings.
 
 ⚙️ MANDATORY OUTPUT RULES (NON-NEGOTIABLE)
 
-1. ZERO CLONED DOCUMENTATION
-   - Vitals (BP, HR, RR, SpO2, temperature, weight) must vary visit-to-visit within physiologically plausible ranges:
-     • BP systolic ±2–15 mmHg between consecutive visits, diastolic ±2–10
-     • HR ±2–10 bpm
-     • RR ±0–4
-     • SpO2 ±0–3 %
-     • Weight ±0.0–1.5 lb unless documented edema/diuresis event
-     • Pain score should reflect intervention impact (typically trending down with effective SN care; do not flatten at one number across all visits)
-   - Wound L×W×D and tissue type must trend (improve, plateau, or worsen) — never leave wound dimensions identical across 3+ visits without explicit rationale.
-   - FSBG, lung sounds, edema grade, ambulation distance must show variation tied to clinical events.
-   - EVERY visit objective MUST include an ISO timestamp (date + time of visit).
+1. RECERT POC (485-aligned, NO discharge planning)
+   - planOfCare must be re-derived from the FRESH recert packet (updated dx, updated meds, updated frequency, updated goals). Do NOT echo prior POC verbatim if recert documentation has changed.
+   - Required: primaryDx, secondaryDx[], homeboundJustification, skilledNeedRationale, measurableGoals[], disciplineOrders[], dmeSupplies. NO dischargePlanning field.
 
-2. NO COPY-PASTE NARRATIVES
-   - subjective, assessment, plannedInterventions, skilledJustification must be specific to THAT visit's findings, not boilerplate.
-   - Each visit's skilledJustification names the specific skilled action performed THAT visit and why an unlicensed person could not safely deliver it.
-   - Each visit restates homebound status with a visit-specific clinical driver — never copy the SOC homebound paragraph.
+2. EDUCATION CONTINUITY (CRITICAL)
+   - Drop any prior topic whose priorEducationLog entry has masteredAt != null. List them in educationDropped[] with reason="mastered".
+   - Carry forward any prior topic still in progress (firstTaught != null && masteredAt == null). List them in educationCarriedForward[] with reason="in-progress" or "stalled".
+   - Add NEW topics seeded from new dx, new meds, or new orders that appear in the recert packet but not in prior topics. These should appear in educationTopics with fresh ids.
+   - HARD RULE: NEVER teach a topic that appears in priorEducationLog with masteredAt != null. Triggers RECERT_MASTERED_TOPIC_RETAUGHT (high).
 
-3. EDUCATION = FLAT TOPIC LIST + PER-VISIT ASSIGNMENT (advancement logic)
-   - Output a single flat educationTopics array seeded from the SOC educationPlan but normalized to {id, topic, linkedDxOrMed, level: "basic"|"intermediate"|"advanced", prerequisiteIds[], teachBackQuestions[], teachingScript}.
-   - Across visits, advance topics: basic → intermediate → advanced for each domain (e.g., Diabetes basic → Insulin admin → Hypoglycemia recognition & complications).
-   - A topic is "mastered" when comprehensionPct >= 80 on 2 separate visits; once mastered, the next-level topic in the same domain becomes the focus.
-   - DO NOT make the same topic the primary focus for 3+ consecutive visits unless you document a stall (comprehensionPct < 60 with response narrative explicitly stating "no progress" or "regressed").
-   - Each visit teaches 1–3 topics. Always include at least one topic per visit.
+3. NEW DX MUST BE ADDRESSED
+   - Any diagnosis present in the new POC's primaryDx or secondaryDx that was NOT in prior POC must have at least one teaching topic AND at least one visit-level intervention. Track in newDxAddressed[].
 
-4. GOAL TRACEABILITY
-   - Every visit's goalsProgress[] must reference at least one POC measurableGoal and document status + objective evidence from THAT visit.
-   - Across the cert period every POC goal must be touched at least twice.
+4. ZERO CLONED DOCUMENTATION (same rules as SN series)
+   - Vitals (BP, HR, RR, SpO2, temp, weight) vary visit-to-visit within physiologic ranges.
+   - Wound L×W×D and tissue type must trend.
+   - FSBG, lung sounds, edema grade, ambulation distance show variation tied to clinical events.
+   - Pain score reflects intervention impact.
+   - Every visit objective MUST include an ISO timestamp.
 
-5. PDGM / LUPA AWARENESS
-   - Every visit carries pdgmPeriod (1 = days 1–30, 2 = days 31–60).
-   - Per-period episodeSummaries report visitsCompleted, lupaThreshold (use the value provided in input, otherwise null), lupaRisk, lupaImpactNote.
+5. NO COPY-PASTE NARRATIVES
+   - subjective, assessment, plannedInterventions, skilledJustification specific to THAT visit.
+   - Each visit names a specific skilled action and a specific homebound driver.
 
-6. PRE-CLAIM POSTURE — ZERO TOLERANCE
-   - No "[NOT DOCUMENTED]" placeholders allowed in billable narrative fields (subjective, objective.timestamp, assessment, skilledJustification). If source data is genuinely missing, mark visit.flags with code="MISSING_SOURCE" and set preClaimChecklist.billableDraftReady=false.
-   - Every visit must include sources[] with field→sourceDoc mappings using only documents from the SOC sourceTable.
-   - F2F encounter must be referenced in episodeSummaries[*].keyInterventions for at least period 1.
+6. EDUCATION ADVANCEMENT
+   - basic → intermediate → advanced for each domain. Mastery = comprehensionPct >= 80 on 2 separate visits.
+   - DO NOT make the same topic the primary focus for 3+ consecutive visits unless documenting a stall (comprehensionPct < 60 + "no progress"/"regressed").
+   - Each visit teaches 1–3 topics, always at least one.
 
-7. HHVBP / TEXAS COMPLIANCE
-   - Touch GG-mobility or GG-self-care items on at least 30 % of visits (ggItemsTouched array). This supports HHVBP claims-based measure capture.
+7. GOAL TRACEABILITY
+   - Every visit's goalsProgress[] references at least one POC measurableGoal with status + objective evidence from THAT visit.
+   - Across the cert period every POC goal is touched at least twice.
 
-8. HIPAA
-   - Use "Pt" or initials only in narrative content. Real full name only in patientFullName field.
+8. PDGM / LUPA AWARENESS
+   - Every visit carries pdgmPeriod (1=days 1–30, 2=days 31–60).
+   - episodeSummaries report visitsCompleted, lupaThreshold, lupaRisk, lupaImpactNote per period.
 
-9. PLAN OF CARE
-   - Echo the SOC planOfCare verbatim (primaryDx, secondaryDx[], homeboundJustification, skilledNeedRationale, measurableGoals[], disciplineOrders[], dmeSupplies). Do NOT include dischargePlanning — it is OUT OF SCOPE for SOC and for this series.
+9. PRE-CLAIM POSTURE — ZERO TOLERANCE
+   - No "[NOT DOCUMENTED]" placeholders in billable narrative fields. If source data is missing, mark visit.flags MISSING_SOURCE and set preClaimChecklist.billableDraftReady=false.
+   - Every visit cites sources[] referencing only documents from the recert sourceTable you produce.
+   - Recert F2F (or interim physician encounter) referenced in episodeSummaries[period 1].keyInterventions.
+
+10. FREQUENCY MATCHES POC
+    - frequencyOrder.raw must equal the SN frequencyDuration in the refreshed planOfCare.disciplineOrders. If user-supplied frequency differs, you MUST emit FREQ_POC_MISMATCH (high) unless a verbalOrder block was passed in input — in which case cite the verbal order in visit #1 coordinationOfCare and in preClaimChecklist.notes.
+
+11. HHVBP / TEXAS COMPLIANCE
+    - Touch GG-mobility or GG-self-care items on at least 30 % of visits.
+
+12. HIPAA
+    - Use "Pt" or initials only in narrative content. Real full name only in patientFullName.
+
+13. RECERT VISIT MARKING
+    - The first visit of the new cert period MUST be visitType="SN-Recert" and document the recert assessment.
 
 🔁 AUDIT LOOP (STRICT)
-Before returning, internally verify ALL of:
-(a) every visit has timestamped objective with varying vitals vs the previous visit,
+Internally verify ALL of:
+(a) every visit has timestamped objective with varying vitals,
 (b) no two consecutive visits share identical BP, HR, weight, or pain score,
 (c) every visit names a specific skilled action and a specific homebound driver,
 (d) every visit updates at least one POC goal,
 (e) education does not violate the 3-visit repetition rule,
-(f) every billable narrative field is filled (no placeholder text),
-(g) every visit cites sources from the provided source table,
+(f) every billable narrative field is filled,
+(g) every visit cites sources from the recert sourceTable,
 (h) episodeSummaries include LUPA computation per period,
 (i) at least 30 % of visits touch GG items,
 (j) preClaimChecklist reflects actual visit content,
-(k) frequencyOrder.raw equals the physician-ordered frequency from the 485 POC OR a verbal order is on file and cited in preClaimChecklist.notes and in visit #1 coordinationOfCare. If neither condition holds, add a failure with code="FREQ_POC_MISMATCH" severity="high".
+(k) frequencyOrder.raw matches the refreshed POC SN frequencyDuration OR a verbal order is on file and cited (FREQ_POC_MISMATCH otherwise),
+(l) NO mastered topic from priorEducationLog appears as primary education in any visit (RECERT_MASTERED_TOPIC_RETAUGHT),
+(m) every new dx in the refreshed POC has at least one teaching topic and one visit intervention (RECERT_NEW_DX_NOT_ADDRESSED),
+(n) if the recert SN frequency differs from the prior episode's SN frequency, the rationale appears in visit #1 coordinationOfCare (RECERT_NO_FREQ_CHANGE_RATIONALE).
 
 Set longitudinalAudit.pass=true ONLY if ALL pass. Otherwise pass=false and populate failures[] with code, severity, message, offendingVisitIds[]. The orchestrator will re-invoke you with revision instructions if pass=false.`;
 
@@ -113,7 +135,7 @@ export const handler = async (req: Request): Promise<Response> => {
     return new Response(
       JSON.stringify({
         status: "ok",
-        function: "sn-series-analyze",
+        function: "recert-series-analyze",
         hasApiKey: Boolean(Deno.env.get("LOVABLE_API_KEY")),
         timestamp: new Date().toISOString(),
       }),
@@ -136,19 +158,19 @@ export const handler = async (req: Request): Promise<Response> => {
 
     const body = await req.json();
     const {
-      socResult,
-      schedule,
+      documents,            // [{name, text}] from parseDocuments
+      schedule,             // VisitSlot[]
       certPeriod,
       frequencyOrder,
       lupaThresholds,
       maxIterations,
-      expectedFrequencyFromPOC,
       verbalOrder,
+      priorSeries,          // optional SnSeriesResult
     } = body ?? {};
 
-    if (!socResult || !Array.isArray(schedule) || schedule.length === 0) {
+    if (!Array.isArray(documents) || documents.length === 0 || !Array.isArray(schedule) || schedule.length === 0) {
       return new Response(
-        JSON.stringify({ error: "socResult and schedule[] are required." }),
+        JSON.stringify({ error: "documents[] and schedule[] are required." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -163,14 +185,14 @@ export const handler = async (req: Request): Promise<Response> => {
     const period2Threshold = lupaThresholds?.period2 ?? null;
 
     const userMessage = buildUserMessage(
-      socResult,
+      documents,
       visitSlots,
       certPeriod,
       frequencyOrder,
       period1Threshold,
       period2Threshold,
-      expectedFrequencyFromPOC ?? null,
       verbalOrder ?? null,
+      priorSeries ?? null,
     );
 
     const toolDefinition = buildToolDefinition();
@@ -188,7 +210,7 @@ export const handler = async (req: Request): Promise<Response> => {
 
     for (let iteration = 1; iteration <= MAX_AUDIT_ITERATIONS; iteration++) {
       iterationsRun = iteration;
-      console.log(`sn-series-analyze: iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
+      console.log(`recert-series-analyze: iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
 
       const response = await fetch(AI_GATEWAY_URL, {
         method: "POST",
@@ -200,7 +222,7 @@ export const handler = async (req: Request): Promise<Response> => {
           model: "google/gemini-2.5-pro",
           messages,
           tools: [toolDefinition],
-          tool_choice: { type: "function", function: { name: "sn_visit_series" } },
+          tool_choice: { type: "function", function: { name: "recert_visit_series" } },
         }),
       });
 
@@ -238,7 +260,7 @@ export const handler = async (req: Request): Promise<Response> => {
       lastFailures = analysisResult.longitudinalAudit?.failures ?? [];
 
       console.log(
-        `sn-series-analyze: iteration ${iteration} → pass=${analysisResult.longitudinalAudit?.pass}, failures=${lastFailures.length}`,
+        `recert-series-analyze: iteration ${iteration} → pass=${analysisResult.longitudinalAudit?.pass}, failures=${lastFailures.length}`,
       );
 
       if (analysisResult.longitudinalAudit?.pass === true && lastFailures.length === 0) break;
@@ -272,7 +294,7 @@ export const handler = async (req: Request): Promise<Response> => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("sn-series-analyze error:", e);
+    console.error("recert-series-analyze error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -281,64 +303,60 @@ export const handler = async (req: Request): Promise<Response> => {
 };
 
 function buildUserMessage(
-  socResult: any,
+  documents: { name: string; text: string }[],
   visitSlots: VisitSlot[],
   certPeriod: any,
   frequencyOrder: any,
   period1Threshold: number | null,
   period2Threshold: number | null,
-  expectedFrequencyFromPOC: string | null,
   verbalOrder: { date: string; orderingMd: string; content: string } | null,
+  priorSeries: any | null,
 ): string {
-  // Trim SOC payload to keep token budget reasonable.
-  const socSummary = {
-    patientIdentifier: socResult.patientIdentifier,
-    patientFullName: socResult.patientFullName,
-    episodeInfo: socResult.episodeInfo,
-    planOfCare: socResult.planOfCare,
-    educationPlan: socResult.educationPlan,
-    redFlags: socResult.redFlags,
-    sourceTable: socResult.sourceTable,
-    medicationReconciliation: socResult.medicationReconciliation,
-  };
+  // Trim prior-series payload to bare essentials for continuity.
+  const priorContext = priorSeries
+    ? {
+        certPeriod: priorSeries.certPeriod,
+        planOfCare: priorSeries.planOfCare,
+        educationTopics: priorSeries.educationTopics,
+        priorEducationLog: priorSeries.educationLog,
+        lastVisits: (priorSeries.visits ?? []).slice(-3),
+        episodeSummaries: priorSeries.episodeSummaries,
+        priorFrequencyOrderRaw: priorSeries.frequencyOrder?.raw,
+      }
+    : null;
 
-  const freqMatch =
-    expectedFrequencyFromPOC && expectedFrequencyFromPOC.trim() === (frequencyOrder?.raw ?? "").trim();
+  const docDump = documents
+    .map((d, i) => `--- DOCUMENT ${i + 1}: ${d.name} ---\n${(d.text || "").slice(0, 18000)}`)
+    .join("\n\n");
 
-  const freqBlock = expectedFrequencyFromPOC
-    ? `\nPHYSICIAN-ORDERED FREQUENCY (from 485 POC): ${expectedFrequencyFromPOC}\nUSER-SUPPLIED FREQUENCY: ${frequencyOrder?.raw}\nFREQUENCY MATCHES POC: ${freqMatch ? "YES" : "NO"}\n${
-        !freqMatch && verbalOrder
-          ? `VERBAL ORDER ON FILE — date=${verbalOrder.date}, MD=${verbalOrder.orderingMd}, content="${verbalOrder.content}". You MUST cite this verbal order in visit #1 coordinationOfCare and in preClaimChecklist.notes.`
-          : !freqMatch
-          ? `NO VERBAL ORDER PROVIDED. This is an audit failure (FREQ_POC_MISMATCH).`
-          : `Frequency matches physician orders.`
-      }\n`
-    : "\n(No POC frequency was provided for cross-check.)\n";
+  return `Generate the complete RECERT SN visit series for the new 60-day certification period below.
 
-  return `Generate the complete SN visit series for the 60-day certification period below.
-
-CERT PERIOD: ${certPeriod?.startDate} → ${certPeriod?.endDate} (60 days)
-FREQUENCY ORDER (raw): ${frequencyOrder?.raw}
+CERT PERIOD (NEW): ${certPeriod?.startDate} → ${certPeriod?.endDate} (60 days)
+FREQUENCY ORDER (raw, user-supplied): ${frequencyOrder?.raw}
 TOTAL SN VISITS SCHEDULED: ${frequencyOrder?.totalVisitsScheduled}
-LUPA THRESHOLD — PERIOD 1 (days 1–30): ${period1Threshold ?? "unknown"}
-LUPA THRESHOLD — PERIOD 2 (days 31–60): ${period2Threshold ?? "unknown"}
-${freqBlock}
-PRE-COMPUTED VISIT SCHEDULE (visitNumber, visitDate, weekOfEpisode, pdgmPeriod) — use exactly these dates:
+LUPA THRESHOLD — PERIOD 1: ${period1Threshold ?? "unknown"}
+LUPA THRESHOLD — PERIOD 2: ${period2Threshold ?? "unknown"}
+
+${verbalOrder ? `VERBAL ORDER ON FILE — date=${verbalOrder.date}, MD=${verbalOrder.orderingMd}, content="${verbalOrder.content}". Cite verbatim in visit #1 coordinationOfCare and in preClaimChecklist.notes.` : "(No verbal order supplied — frequency must match the refreshed POC SN order.)"}
+
+PRE-COMPUTED VISIT SCHEDULE (use exactly these dates):
 ${visitSlots.map((v) => `  #${v.visitNumber}  ${v.visitDate}  wk${v.weekOfEpisode}  P${v.pdgmPeriod}`).join("\n")}
 
-SOC ANALYSIS JSON (use as ground truth for POC, education seed, sources):
-${JSON.stringify(socSummary, null, 2)}
+${priorContext ? `PRIOR EPISODE CONTEXT (for education continuity, frequency-change rationale, and progress baseline):\n${JSON.stringify(priorContext, null, 2)}` : "PRIOR EPISODE CONTEXT: NONE PROVIDED — treat education topics as freshly seeded from the recert packet."}
 
-Now produce the full series following the system rules.`;
+RECERT DOCUMENT PACKET (raw text, ground truth for refreshed POC + sources):
+${docDump}
+
+Now produce the full recert series following the system rules.`;
 }
 
 function buildToolDefinition() {
   return {
     type: "function",
     function: {
-      name: "sn_visit_series",
+      name: "recert_visit_series",
       description:
-        "Return the complete 60-day SN visit series with embedded POC, flat education topics, per-visit notes, education log, episode summaries, longitudinal audit, and pre-claim checklist.",
+        "Return the complete 60-day RECERT SN visit series with refreshed POC, reconciled flat education topics, per-visit notes, education log, episode summaries, longitudinal audit, pre-claim checklist, and continuity metadata (carry-forward / dropped / new dx addressed).",
       parameters: {
         type: "object",
         properties: {
@@ -414,6 +432,46 @@ function buildToolDefinition() {
                 teachingScript: { type: "string" },
               },
               required: ["id", "topic", "linkedDxOrMed", "level", "prerequisiteIds", "teachBackQuestions", "teachingScript"],
+              additionalProperties: false,
+            },
+          },
+          educationCarriedForward: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                topicId: { type: "string" },
+                topic: { type: "string" },
+                level: { type: "string", enum: ["basic", "intermediate", "advanced"] },
+                reason: { type: "string", enum: ["in-progress", "stalled"] },
+              },
+              required: ["topicId", "topic", "level", "reason"],
+              additionalProperties: false,
+            },
+          },
+          educationDropped: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                topicId: { type: "string" },
+                topic: { type: "string" },
+                reason: { type: "string", enum: ["mastered", "no-longer-applicable"] },
+                masteredAt: { type: "string" },
+              },
+              required: ["topicId", "topic", "reason"],
+              additionalProperties: false,
+            },
+          },
+          newDxAddressed: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                dx: { type: "string" },
+                firstAddressedVisitId: { type: "string" },
+              },
+              required: ["dx", "firstAddressedVisitId"],
               additionalProperties: false,
             },
           },
@@ -635,7 +693,8 @@ function buildToolDefinition() {
         },
         required: [
           "patientIdentifier", "patientFullName", "certPeriod", "frequencyOrder",
-          "planOfCare", "educationTopics", "visits", "educationLog",
+          "planOfCare", "educationTopics", "educationCarriedForward", "educationDropped",
+          "newDxAddressed", "visits", "educationLog",
           "episodeSummaries", "longitudinalAudit", "preClaimChecklist",
           "redFlags", "sourceTable",
         ],
