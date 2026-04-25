@@ -454,7 +454,7 @@ export default function Index() {
             <RadioGroup
               value={mode}
               onValueChange={(v) => switchMode(v as AnalysisMode)}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
             >
               <ModeCard
                 value="recert"
@@ -475,7 +475,7 @@ export default function Index() {
                 checked={mode === "recertSeries"}
                 disabled={isAnalyzing}
                 title="Recert Visit Series (next 60d)"
-                desc="Generates the next 60-day SN visit series from a fresh recertification packet, with education continuity (drops mastered topics, carries forward in-progress)."
+                desc="Generates the next 60-day SN visit series from a fresh recertification packet, with education continuity."
               />
               <ModeCard
                 value="snSeries"
@@ -484,9 +484,23 @@ export default function Index() {
                 title="SN Visit Series (60-day)"
                 desc={
                   socResult
-                    ? "Generates the entire 60-day cert-period of SN visit notes from the SOC result, with non-cloned vitals, education advancement, LUPA flagging, and pre-claim audit."
+                    ? "Generates the entire 60-day cert-period of SN visit notes from the SOC result."
                     : "Run Admission / SOC analysis first — the series generator consumes its output."
                 }
+              />
+              <ModeCard
+                value="snQuickDraft"
+                checked={mode === "snQuickDraft"}
+                disabled={isAnalyzing}
+                title="Quick SN Visit Draft"
+                desc="Paste your scribbled vitals / quick notes from one visit. Get a polished, billable SN visit note — without inventing vitals you didn't take."
+              />
+              <ModeCard
+                value="snRecertDraft"
+                checked={mode === "snRecertDraft"}
+                disabled={isAnalyzing}
+                title="Narrative Recert Visit Note"
+                desc="Single SN visit note for the recert OASIS period — no vitals (they go on OASIS), heavy on assessment, interventions, deep education, COC, and next-visit focus."
               />
             </RadioGroup>
           </section>
@@ -497,13 +511,107 @@ export default function Index() {
               <div className="flex items-center gap-2 mb-4">
                 <FileStack className="h-5 w-5 text-accent" />
                 <h2 className="text-base font-semibold">
-                  {isSoc ? "Upload Admission Packet" : isRecertSeries ? "Upload Recertification Packet" : "Upload Recertification Packet"}
+                  {isSoc
+                    ? "Upload Admission Packet"
+                    : isRecertSeries
+                    ? "Upload Recertification Packet"
+                    : isQuickDraft
+                    ? "Upload Source Notes (optional)"
+                    : isRecertDraft
+                    ? "Upload Recert Packet (optional)"
+                    : "Upload Recertification Packet"}
                 </h2>
               </div>
               <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
               <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
             </section>
           )}
+
+          {/* Single-visit Draft inputs */}
+          {isDraft && (
+            <section className="rounded-md border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-accent" />
+                <h2 className="text-base font-semibold">
+                  {isQuickDraft ? "Quick Visit Inputs" : "Recert Narrative Inputs"}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Visit Date</Label>
+                  <Input type="date" value={draftVisitDate} onChange={(e) => setDraftVisitDate(e.target.value)} disabled={isAnalyzing} />
+                </div>
+                <div>
+                  <Label className="text-xs">Visit # (optional)</Label>
+                  <Input type="number" min={1} value={draftVisitNumber} onChange={(e) => setDraftVisitNumber(e.target.value)} disabled={isAnalyzing} />
+                </div>
+                <div>
+                  <Label className="text-xs">Week of episode (optional)</Label>
+                  <Input type="number" min={1} max={9} value={draftWeekOfEpisode} onChange={(e) => setDraftWeekOfEpisode(e.target.value)} disabled={isAnalyzing} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Patient identifier (optional)</Label>
+                  <Input value={draftPatientId} onChange={(e) => setDraftPatientId(e.target.value)} disabled={isAnalyzing} placeholder="MR# or initials" />
+                </div>
+                <div>
+                  <Label className="text-xs">Patient full name (optional)</Label>
+                  <Input value={draftPatientName} onChange={(e) => setDraftPatientName(e.target.value)} disabled={isAnalyzing} placeholder="Used only on the cover, not in narrative" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">
+                  Patient context — Dx, current meds, key goals
+                  {socResult && !draftPatientContext.trim() && (
+                    <span className="ml-1 text-muted-foreground">(will auto-fill from in-memory SOC if left blank)</span>
+                  )}
+                </Label>
+                <textarea
+                  value={draftPatientContext}
+                  onChange={(e) => setDraftPatientContext(e.target.value)}
+                  disabled={isAnalyzing}
+                  rows={3}
+                  placeholder="e.g. T2DM on metformin 1000 mg BID + new insulin glargine 10u qHS; HTN on lisinopril 20 mg; goal: FSBG 80-180 within 30 days; homebound: SOB on exertion < 20 ft."
+                  className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm"
+                />
+              </div>
+              {isQuickDraft && (
+                <div>
+                  <Label className="text-xs">
+                    Source notes — paste your scribbled vitals / quick notes for THIS visit
+                    <span className="text-flag ml-1">(required unless you upload a document above)</span>
+                  </Label>
+                  <textarea
+                    value={draftSourceText}
+                    onChange={(e) => setDraftSourceText(e.target.value)}
+                    disabled={isAnalyzing}
+                    rows={6}
+                    placeholder={`e.g.\n11/12/26 - BP 138/82, HR 78, SpO2 96%, FSBG 162 fasting\nNew insulin glargine 10u qHS started by Dr. Smith yesterday\nTaught insulin injection sites - rotated abdomen, pt returned demo correctly\nCalled MD re: foot ulcer left heel - new order for dressing change M/W/F`}
+                    className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The AI will EXPAND these into a billable note, but will NOT invent vitals you didn't write down — missing fields are flagged.
+                  </p>
+                </div>
+              )}
+              {isRecertDraft && (
+                <div>
+                  <Label className="text-xs">Teaching focus (optional)</Label>
+                  <Input
+                    value={draftTeachingFocus}
+                    onChange={(e) => setDraftTeachingFocus(e.target.value)}
+                    disabled={isAnalyzing}
+                    placeholder="e.g. New metformin + low-Na diet + foot care for diabetic neuropathy"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Vitals are deliberately omitted — they live in the Recert OASIS. The note focuses on assessment, interventions, deep education (what / why / diet / lifestyle / safety / teach-back), COC, and next-visit focus.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
 
           {/* SN Series inputs */}
           {(isSeries || isRecertSeries) && (
