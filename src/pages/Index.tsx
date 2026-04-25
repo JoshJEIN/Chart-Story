@@ -467,7 +467,7 @@ export default function Index() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setFrequencyRaw(pocFreq.raw)}
+                        onClick={() => setFrequencyRaw(pocCanonical || pocFreq.raw)}
                         disabled={isAnalyzing || freqMatchesPoc}
                       >
                         Use POC
@@ -476,7 +476,10 @@ export default function Index() {
                   </div>
                   {pocFreq && (
                     <p className={`mt-1 text-xs ${freqMatchesPoc ? "text-muted-foreground" : "text-flag"}`}>
-                      485 POC orders <span className="font-mono">{pocFreq.raw}</span>{" "}
+                      485 POC orders <span className="font-mono">{pocFreq.raw}</span>
+                      {pocCanonical && pocCanonical !== pocFreq.raw && (
+                        <> → <span className="font-mono">{pocCanonical}</span></>
+                      )}{" "}
                       ({pocFreq.parsed.totalVisitsScheduled} SN visits).{" "}
                       {freqMatchesPoc
                         ? "✓ Matches physician orders."
