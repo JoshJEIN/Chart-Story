@@ -73,7 +73,8 @@ Before returning, internally verify ALL of:
 (g) every visit cites sources from the provided source table,
 (h) episodeSummaries include LUPA computation per period,
 (i) at least 30 % of visits touch GG items,
-(j) preClaimChecklist reflects actual visit content.
+(j) preClaimChecklist reflects actual visit content,
+(k) frequencyOrder.raw equals the physician-ordered frequency from the 485 POC OR a verbal order is on file and cited in preClaimChecklist.notes and in visit #1 coordinationOfCare. If neither condition holds, add a failure with code="FREQ_POC_MISMATCH" severity="high".
 
 Set longitudinalAudit.pass=true ONLY if ALL pass. Otherwise pass=false and populate failures[] with code, severity, message, offendingVisitIds[]. The orchestrator will re-invoke you with revision instructions if pass=false.`;
 
