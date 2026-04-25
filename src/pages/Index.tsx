@@ -310,11 +310,33 @@ export default function Index() {
                   <Label className="text-xs">
                     Physician Frequency Order (e.g. <span className="font-mono">2w3, 1w6, 1w4</span>)
                   </Label>
-                  <Input
-                    value={frequencyRaw}
-                    onChange={(e) => setFrequencyRaw(e.target.value)}
-                    disabled={isAnalyzing}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={frequencyRaw}
+                      onChange={(e) => setFrequencyRaw(e.target.value)}
+                      disabled={isAnalyzing}
+                    />
+                    {pocFreq && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFrequencyRaw(pocFreq.raw)}
+                        disabled={isAnalyzing || freqMatchesPoc}
+                      >
+                        Use POC
+                      </Button>
+                    )}
+                  </div>
+                  {pocFreq && (
+                    <p className={`mt-1 text-xs ${freqMatchesPoc ? "text-muted-foreground" : "text-flag"}`}>
+                      485 POC orders <span className="font-mono">{pocFreq.raw}</span>{" "}
+                      ({pocFreq.parsed.totalVisitsScheduled} SN visits).{" "}
+                      {freqMatchesPoc
+                        ? "✓ Matches physician orders."
+                        : "⚠ Differs from physician orders — verbal order required."}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">LUPA Threshold — Period 1 (days 1–30, optional)</Label>
