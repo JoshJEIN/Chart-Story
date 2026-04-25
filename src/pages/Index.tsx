@@ -20,9 +20,11 @@ import { extractTextFromDocuments } from "@/lib/parseDocuments";
 import { analyzeDocuments } from "@/lib/analyzeDocuments";
 import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
 import { analyzeSnVisitSeries } from "@/lib/analyzeSnSeries";
+import { analyzeRecertVisitSeries } from "@/lib/analyzeRecertSeries";
 import { parseFrequencyString, buildCertPeriod, extractSnFrequencyFromPOC } from "@/lib/parseFrequency";
+import type { RecertSeriesResult } from "@/types/recertSeries";
 
-type AnalysisMode = "recert" | "soc" | "snSeries";
+type AnalysisMode = "recert" | "soc" | "snSeries" | "recertSeries";
 
 export default function Index() {
   const [mode, setMode] = useState<AnalysisMode>("recert");
