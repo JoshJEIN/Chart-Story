@@ -40,8 +40,21 @@ export default function Index() {
   const [frequencyRaw, setFrequencyRaw] = useState<string>("2w3, 1w6, 1w4");
   const [lupaPeriod1, setLupaPeriod1] = useState<string>("");
   const [lupaPeriod2, setLupaPeriod2] = useState<string>("");
+  const [verbalOrderDate, setVerbalOrderDate] = useState<string>("");
+  const [verbalOrderMd, setVerbalOrderMd] = useState<string>("");
+  const [verbalOrderContent, setVerbalOrderContent] = useState<string>("");
 
   const { toast } = useToast();
+
+  // Derived: POC frequency from the SOC result, if any
+  const pocFreq = socResult ? extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders) : null;
+  const userFreq = parseFrequencyString(frequencyRaw);
+  const freqMatchesPoc =
+    !!pocFreq && pocFreq.raw.trim().toLowerCase() === frequencyRaw.trim().toLowerCase();
+  const verbalOrderProvided = Boolean(
+    verbalOrderDate && verbalOrderMd.trim() && verbalOrderContent.trim(),
+  );
+  const freqGateOk = !pocFreq || freqMatchesPoc || verbalOrderProvided;
 
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
@@ -51,6 +64,13 @@ export default function Index() {
     if (next === "recert") setSocResult(null);
     setRecertResult(null);
     setSeriesResult(null);
+    // When entering SN Series mode, pre-fill frequency from the POC if available.
+    if (next === "snSeries" && socResult) {
+      const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
+      if (fromPoc && fromPoc.parsed.totalVisitsScheduled > 0) {
+        setFrequencyRaw(fromPoc.raw);
+      }
+    }
   };
 
   const handleHealthCheck = async () => {
