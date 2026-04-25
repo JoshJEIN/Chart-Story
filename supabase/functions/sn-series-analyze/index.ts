@@ -426,7 +426,7 @@ function buildToolDefinition() {
                 visitNumber: { type: "number" },
                 visitDate: { type: "string" },
                 weekOfEpisode: { type: "number" },
-                pdgmPeriod: { type: "number", enum: [1, 2] },
+                pdgmPeriod: { type: "number" },
                 visitType: { type: "string", enum: ["SN-Assessment", "SN-Skilled", "SN-Recert", "SN-Discharge"] },
                 subjective: { type: "string" },
                 objective: {
@@ -552,7 +552,7 @@ function buildToolDefinition() {
             items: {
               type: "object",
               properties: {
-                period: { type: "number", enum: [1, 2] },
+                period: { type: "number" },
                 visitsCompleted: { type: "number" },
                 visitsScheduled: { type: "number" },
                 lupaThreshold: { type: "number" },
