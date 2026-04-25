@@ -24,9 +24,10 @@ export default function Index() {
   const handleHealthCheck = async () => {
     setIsCheckingHealth(true);
     try {
+      // Send only a JSON body flag — no custom header — so the browser does not
+      // trigger a CORS preflight for a non-standard header.
       const { data, error } = await supabase.functions.invoke("pcr-analyze", {
         body: { health: 1 },
-        headers: { "x-health-check": "1" },
       });
       if (error) throw error;
       const ok = data?.status === "ok";

@@ -3,7 +3,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-health-check, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const SYSTEM_PROMPT = `You are a Medicare home health Pre-Claim Review (PCR) recertification analyst for a skilled nursing agency. You will receive extracted text from a recertification packet containing documents from different categories (OASIS, Plan of Care, Face-to-Face, Physician Orders, SN Visit Notes, SOAP Notes, Labs/Diagnostics, Medication Lists, and other records).
@@ -169,12 +169,33 @@ export const handler = async (req: Request): Promise<Response> => {
 
   // Lightweight health probe — verify the function is deployed and the
   // Lovable AI key is configured WITHOUT running an analysis or calling the
-  // gateway. Accessible via GET or POST to /health (or ?health=1).
+  // gateway. Accessible via GET/POST to /health, ?health=1, x-health-check
+  // header, OR a JSON body containing { health: 1 } (preferred from browsers
+  // because it avoids triggering a CORS preflight for a custom header).
   const url = new URL(req.url);
-  const isHealthCheck =
+  let isHealthCheck =
     url.pathname.endsWith("/health") ||
     url.searchParams.get("health") === "1" ||
     req.headers.get("x-health-check") === "1";
+
+  // Peek at the body for a health flag without consuming it for the main flow.
+  // Only attempt this for small JSON POSTs to avoid touching large analysis payloads.
+  if (!isHealthCheck && req.method === "POST") {
+    const ct = req.headers.get("content-type") ?? "";
+    const cl = Number(req.headers.get("content-length") ?? "0");
+    if (ct.includes("application/json") && cl > 0 && cl < 1024) {
+      try {
+        const cloned = req.clone();
+        const peek = await cloned.json();
+        if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
+          isHealthCheck = true;
+        }
+      } catch {
+        // ignore — fall through to normal handling
+      }
+    }
+  }
+
   if (isHealthCheck) {
     return new Response(
       JSON.stringify({
