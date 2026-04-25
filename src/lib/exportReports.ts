@@ -401,10 +401,6 @@ export function generateSocPlanOfCareReport(result: SocAnalysisResult): void {
   lines.push(SOC_MINOR);
   lines.push(poc?.dmeSupplies || "(none)");
   lines.push("");
-  lines.push("DISCHARGE PLANNING");
-  lines.push(SOC_MINOR);
-  lines.push(poc?.dischargePlanning || "(none)");
-  lines.push("");
   if (result.medicationReconciliation?.length) {
     lines.push("MEDICATION RECONCILIATION FLAGS");
     lines.push(SOC_MINOR);

@@ -379,9 +379,8 @@ export const handler = async (req: Request): Promise<Response> => {
                   },
                 },
                 dmeSupplies: { type: "string", description: "DME and supplies referenced in chart, or '[NEEDS CLARIFICATION]'." },
-                dischargePlanning: { type: "string", description: "Expected discharge criteria and follow-up." },
               },
-              required: ["primaryDx", "secondaryDx", "homeboundJustification", "skilledNeedRationale", "measurableGoals", "disciplineOrders", "dmeSupplies", "dischargePlanning"],
+              required: ["primaryDx", "secondaryDx", "homeboundJustification", "skilledNeedRationale", "measurableGoals", "disciplineOrders", "dmeSupplies"],
               additionalProperties: false,
             },
             firstSnVisitNote: {

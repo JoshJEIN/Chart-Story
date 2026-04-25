@@ -20,7 +20,6 @@ export interface SocPlanOfCare {
   measurableGoals: string[];
   disciplineOrders: SocDisciplineOrder[];
   dmeSupplies: string;
-  dischargePlanning: string;
 }
 
 export interface SocFirstVisitNote {
