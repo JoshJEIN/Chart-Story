@@ -366,6 +366,13 @@ export default function Index() {
                 desc="Forward-looking 485-aligned care plan, first SN visit note template, and patient/caregiver education plan."
               />
               <ModeCard
+                value="recertSeries"
+                checked={mode === "recertSeries"}
+                disabled={isAnalyzing}
+                title="Recert Visit Series (next 60d)"
+                desc="Generates the next 60-day SN visit series from a fresh recertification packet, with education continuity (drops mastered topics, carries forward in-progress)."
+              />
+              <ModeCard
                 value="snSeries"
                 checked={mode === "snSeries"}
                 disabled={isAnalyzing}
