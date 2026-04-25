@@ -141,6 +141,8 @@ export const handler = async (req: Request): Promise<Response> => {
       frequencyOrder,
       lupaThresholds,
       maxIterations,
+      expectedFrequencyFromPOC,
+      verbalOrder,
     } = body ?? {};
 
     if (!socResult || !Array.isArray(schedule) || schedule.length === 0) {
@@ -159,7 +161,16 @@ export const handler = async (req: Request): Promise<Response> => {
     const period1Threshold = lupaThresholds?.period1 ?? null;
     const period2Threshold = lupaThresholds?.period2 ?? null;
 
-    const userMessage = buildUserMessage(socResult, visitSlots, certPeriod, frequencyOrder, period1Threshold, period2Threshold);
+    const userMessage = buildUserMessage(
+      socResult,
+      visitSlots,
+      certPeriod,
+      frequencyOrder,
+      period1Threshold,
+      period2Threshold,
+      expectedFrequencyFromPOC ?? null,
+      verbalOrder ?? null,
+    );
 
     const toolDefinition = buildToolDefinition();
 
