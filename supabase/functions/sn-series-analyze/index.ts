@@ -426,7 +426,7 @@ function buildToolDefinition() {
                 visitNumber: { type: "number" },
                 visitDate: { type: "string" },
                 weekOfEpisode: { type: "number" },
-                pdgmPeriod: { type: "number", enum: [1, 2] },
+                pdgmPeriod: { type: "number" },
                 visitType: { type: "string", enum: ["SN-Assessment", "SN-Skilled", "SN-Recert", "SN-Discharge"] },
                 subjective: { type: "string" },
                 objective: {
