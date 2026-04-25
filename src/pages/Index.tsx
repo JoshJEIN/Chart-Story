@@ -401,7 +401,7 @@ export default function Index() {
           )}
 
           {/* SN Series inputs */}
-          {isSeries && (
+          {(isSeries || isRecertSeries) && (
             <section className="rounded-md border border-border bg-card p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <CalendarRange className="h-5 w-5 text-accent" />
