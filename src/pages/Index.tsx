@@ -787,7 +787,8 @@ export default function Index() {
               onClick={handleAnalyze}
               disabled={
                 isAnalyzing ||
-                (isUploadMode && documents.length === 0) ||
+                (isUploadMode && !isDraft && documents.length === 0) ||
+                (isQuickDraft && !draftSourceText.trim() && documents.length === 0) ||
                 (isSeries && !socResult) ||
                 (isSeries && !freqGateOk) ||
                 (isRecertSeries && parseFrequencyString(frequencyRaw).totalVisitsScheduled === 0)
