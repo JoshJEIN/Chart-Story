@@ -63,11 +63,17 @@ export default function Index() {
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
     setMode(next);
-    // Don't clear socResult when switching to snSeries — we need it.
-    if (next !== "snSeries") setDocuments([]);
-    if (next === "recert") setSocResult(null);
+    // Keep socResult when entering snSeries (it consumes it).
+    // Keep documents when entering recertSeries (we just uploaded them).
+    if (next !== "snSeries" && next !== "recertSeries") setDocuments([]);
+    if (next === "snSeries" && documents.length > 0 && !socResult) {
+      // documents from a previous mode shouldn't leak into series-only mode
+      setDocuments([]);
+    }
+    if (next === "recert" || next === "recertSeries") setSocResult(null);
     setRecertResult(null);
-    setSeriesResult(null);
+    if (next !== "snSeries") setSeriesResult(null);
+    if (next !== "recertSeries") setRecertSeriesResult(null);
     // When entering SN Series mode, pre-fill frequency from the POC if available.
     if (next === "snSeries" && socResult) {
       const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
