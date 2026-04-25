@@ -4,6 +4,7 @@ import type {
   CertPeriod,
   FrequencyOrder,
   SnSeriesResult,
+  SnVerbalOrder,
 } from "@/types/snSeries";
 import { buildVisitSchedule } from "@/lib/parseFrequency";
 import { buildEducationLog, findEducationRepetitionViolations } from "@/lib/educationAdvancement";
@@ -12,6 +13,8 @@ import { auditObjectiveFindings } from "@/lib/objectiveFindingsAudit";
 interface AnalyzeOptions {
   maxIterations?: number;
   lupaThresholds?: { period1?: number | null; period2?: number | null };
+  expectedFrequencyFromPOC?: string | null;
+  verbalOrder?: SnVerbalOrder | null;
 }
 
 export async function analyzeSnVisitSeries(
@@ -30,6 +33,8 @@ export async function analyzeSnVisitSeries(
       frequencyOrder,
       lupaThresholds: options.lupaThresholds ?? null,
       maxIterations: options.maxIterations,
+      expectedFrequencyFromPOC: options.expectedFrequencyFromPOC ?? null,
+      verbalOrder: options.verbalOrder ?? null,
     },
   });
 
@@ -53,14 +58,32 @@ export async function analyzeSnVisitSeries(
     offendingVisitIds: r.visitIds,
   }));
 
+  // Deterministic POC frequency match check (mirrors edge audit criterion k).
+  const freqFailures: SnSeriesResult["longitudinalAudit"]["failures"] = [];
+  if (
+    options.expectedFrequencyFromPOC &&
+    options.expectedFrequencyFromPOC.trim() !== frequencyOrder.raw.trim() &&
+    !options.verbalOrder
+  ) {
+    freqFailures.push({
+      code: "FREQ_POC_MISMATCH",
+      severity: "high",
+      message: `Frequency "${frequencyOrder.raw}" does not match physician-ordered frequency "${options.expectedFrequencyFromPOC}" and no verbal order was supplied.`,
+      offendingVisitIds: [],
+    });
+  }
+
   const mergedFailures = [
     ...(result.longitudinalAudit?.failures ?? []),
     ...cloneFailures,
     ...repetitionFailures,
+    ...freqFailures,
   ];
 
   return {
     ...result,
+    expectedFrequencyFromPOC: options.expectedFrequencyFromPOC ?? null,
+    verbalOrder: options.verbalOrder ?? null,
     educationLog: recomputedLog,
     longitudinalAudit: {
       pass: mergedFailures.length === 0,
