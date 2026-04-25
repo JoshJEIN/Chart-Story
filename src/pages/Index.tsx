@@ -571,9 +571,10 @@ export default function Index() {
               onClick={handleAnalyze}
               disabled={
                 isAnalyzing ||
-                (!isSeries && documents.length === 0) ||
+                (isUploadMode && documents.length === 0) ||
                 (isSeries && !socResult) ||
-                (isSeries && !freqGateOk)
+                (isSeries && !freqGateOk) ||
+                (isRecertSeries && parseFrequencyString(frequencyRaw).totalVisitsScheduled === 0)
               }
               className="gap-2 px-8"
             >
