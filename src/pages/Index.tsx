@@ -432,7 +432,8 @@ export default function Index() {
               disabled={
                 isAnalyzing ||
                 (!isSeries && documents.length === 0) ||
-                (isSeries && !socResult)
+                (isSeries && !socResult) ||
+                (isSeries && !freqGateOk)
               }
               className="gap-2 px-8"
             >
