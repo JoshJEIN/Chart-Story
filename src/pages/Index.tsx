@@ -52,9 +52,13 @@ export default function Index() {
 
   // Derived: POC frequency from the SOC result, if any
   const pocFreq = socResult ? extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders) : null;
+  const pocCanonical = pocFreq?.canonical ?? pocFreq?.raw ?? "";
   const userFreq = parseFrequencyString(frequencyRaw);
+  const normalizedInput = frequencyRaw.trim().toLowerCase().replace(/\s+/g, " ");
   const freqMatchesPoc =
-    !!pocFreq && pocFreq.raw.trim().toLowerCase() === frequencyRaw.trim().toLowerCase();
+    !!pocFreq &&
+    (pocFreq.raw.trim().toLowerCase() === normalizedInput ||
+      pocCanonical.trim().toLowerCase() === normalizedInput);
   const verbalOrderProvided = Boolean(
     verbalOrderDate && verbalOrderMd.trim() && verbalOrderContent.trim(),
   );
