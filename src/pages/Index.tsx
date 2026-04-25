@@ -661,6 +661,59 @@ export default function Index() {
               </div>
             </>
           )}
+          {recertSeriesResult && (
+            <>
+              {(recertSeriesResult.educationCarriedForward?.length ||
+                recertSeriesResult.educationDropped?.length ||
+                recertSeriesResult.newDxAddressed?.length) ? (
+                <section className="rounded-md border border-border bg-card p-4 space-y-3">
+                  <h3 className="text-sm font-semibold">Recert Continuity Summary</h3>
+                  {recertSeriesResult.educationDropped?.length > 0 && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Dropped (mastered or N/A)</Label>
+                      <ul className="text-xs list-disc ml-5">
+                        {recertSeriesResult.educationDropped.map((d) => (
+                          <li key={d.topicId}>{d.topic} — {d.reason}{d.masteredAt ? ` (mastered ${d.masteredAt})` : ""}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recertSeriesResult.educationCarriedForward?.length > 0 && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Carried forward</Label>
+                      <ul className="text-xs list-disc ml-5">
+                        {recertSeriesResult.educationCarriedForward.map((c) => (
+                          <li key={c.topicId}>{c.topic} ({c.level}) — {c.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recertSeriesResult.newDxAddressed?.length > 0 && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">New diagnoses addressed</Label>
+                      <ul className="text-xs list-disc ml-5">
+                        {recertSeriesResult.newDxAddressed.map((n, i) => (
+                          <li key={i}>{n.dx} (first addressed: {n.firstAddressedVisitId})</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              ) : null}
+              <SnVisitSeriesDisplay result={recertSeriesResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => { setRecertSeriesResult(null); setDocuments([]); }}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  Clear Recert Series
+                </Button>
+              </div>
+            </>
+          )}
         </motion.div>
       </main>
     </div>
