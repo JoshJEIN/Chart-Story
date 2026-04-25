@@ -1,49 +1,64 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack, Settings2, Activity } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2, Activity, CalendarRange } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import ReviewHeader from "@/components/ReviewHeader";
 import DocumentUploader from "@/components/DocumentUploader";
 import AnalysisDisplay from "@/components/AnalysisDisplay";
 import AdmissionAnalysisDisplay from "@/components/AdmissionAnalysisDisplay";
+import SnVisitSeriesDisplay from "@/components/SnVisitSeriesDisplay";
 import { UploadedDocument, AnalysisResult } from "@/types/pcr";
 import { SocAnalysisResult } from "@/types/soc";
+import { SnSeriesResult } from "@/types/snSeries";
 import { extractTextFromDocuments } from "@/lib/parseDocuments";
 import { analyzeDocuments } from "@/lib/analyzeDocuments";
 import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
+import { analyzeSnVisitSeries } from "@/lib/analyzeSnSeries";
+import { parseFrequencyString, buildCertPeriod } from "@/lib/parseFrequency";
 
-type AnalysisMode = "recert" | "soc";
+type AnalysisMode = "recert" | "soc" | "snSeries";
 
 export default function Index() {
   const [mode, setMode] = useState<AnalysisMode>("recert");
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [recertResult, setRecertResult] = useState<AnalysisResult | null>(null);
   const [socResult, setSocResult] = useState<SocAnalysisResult | null>(null);
+  const [seriesResult, setSeriesResult] = useState<SnSeriesResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  // SN Series inputs
+  const today = new Date().toISOString().slice(0, 10);
+  const [socStartDate, setSocStartDate] = useState<string>(today);
+  const [frequencyRaw, setFrequencyRaw] = useState<string>("2w3, 1w6, 1w4");
+  const [lupaPeriod1, setLupaPeriod1] = useState<string>("");
+  const [lupaPeriod2, setLupaPeriod2] = useState<string>("");
+
   const { toast } = useToast();
 
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
     setMode(next);
-    setDocuments([]);
+    // Don't clear socResult when switching to snSeries — we need it.
+    if (next !== "snSeries") setDocuments([]);
+    if (next === "recert") setSocResult(null);
     setRecertResult(null);
-    setSocResult(null);
+    setSeriesResult(null);
   };
 
   const handleHealthCheck = async () => {
     setIsCheckingHealth(true);
     try {
-      const fnName = mode === "recert" ? "pcr-analyze" : "soc-analyze";
-      const { data, error } = await supabase.functions.invoke(fnName, {
-        body: { health: 1 },
-      });
+      const fnName =
+        mode === "recert" ? "pcr-analyze" : mode === "soc" ? "soc-analyze" : "sn-series-analyze";
+      const { data, error } = await supabase.functions.invoke(fnName, { body: { health: 1 } });
       if (error) throw error;
       const ok = data?.status === "ok";
       toast({
@@ -64,7 +79,53 @@ export default function Index() {
     }
   };
 
+  const runSnSeries = async () => {
+    if (!socResult) {
+      toast({
+        title: "Run Admission/SOC analysis first",
+        description: "The SN Visit Series mode consumes the SOC result. Switch to SOC mode, run analysis, then return here.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const freq = parseFrequencyString(frequencyRaw);
+    if (freq.totalVisitsScheduled === 0) {
+      toast({
+        title: "Frequency string could not be parsed",
+        description: 'Use formats like "2w3, 1w6, 1w4" (visits-per-week × weeks).',
+        variant: "destructive",
+      });
+      return;
+    }
+    const certPeriod = buildCertPeriod(socStartDate);
+    setIsAnalyzing(true);
+    setSeriesResult(null);
+    try {
+      const result = await analyzeSnVisitSeries(socResult, certPeriod, freq, {
+        maxIterations,
+        lupaThresholds: {
+          period1: lupaPeriod1 ? parseInt(lupaPeriod1, 10) : null,
+          period2: lupaPeriod2 ? parseInt(lupaPeriod2, 10) : null,
+        },
+      });
+      setSeriesResult(result);
+      toast({ title: "SN visit series generated", description: `${result.visits?.length ?? 0} visit notes ready for review.` });
+    } catch (err: any) {
+      toast({
+        title: "SN series generation failed",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleAnalyze = async () => {
+    if (mode === "snSeries") {
+      void runSnSeries();
+      return;
+    }
     if (documents.length === 0) {
       toast({
         title: "No documents uploaded",
@@ -76,17 +137,16 @@ export default function Index() {
 
     setIsAnalyzing(true);
     setRecertResult(null);
-    setSocResult(null);
+    if (mode === "soc") setSocResult(null);
 
     try {
       const extracted = await extractTextFromDocuments(documents);
-
       const unreadable = extracted.filter((d) => !d.ok);
       if (unreadable.length === extracted.length) {
         throw new Error(
           `None of the uploaded files produced extractable text. ${
             unreadable[0]?.note ?? "Re-upload as text-based PDF, DOCX, TXT, or CSV."
-          }`
+          }`,
         );
       }
       if (unreadable.length > 0) {
@@ -121,10 +181,13 @@ export default function Index() {
   };
 
   const isSoc = mode === "soc";
+  const isSeries = mode === "snSeries";
   const uploaderHelper = isSoc
-    ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list. Categorize each document for best results."
-    : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records. Categorize each document for best results.";
-  const analyzeButtonLabel = isSoc
+    ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list."
+    : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records.";
+  const analyzeButtonLabel = isSeries
+    ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} SN Visit Notes (60-day cert)`
+    : isSoc
     ? "Run Admission / SOC Care-Plan Analysis"
     : "Run PCR Recertification Analysis";
 
@@ -145,54 +208,112 @@ export default function Index() {
             <RadioGroup
               value={mode}
               onValueChange={(v) => switchMode(v as AnalysisMode)}
-              className="flex flex-col sm:flex-row gap-3"
+              className="grid grid-cols-1 sm:grid-cols-3 gap-3"
             >
-              <label
-                htmlFor="mode-recert"
-                className={`flex-1 cursor-pointer rounded-md border p-3 transition-colors ${
-                  mode === "recert" ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
-                } ${isAnalyzing ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                <div className="flex items-start gap-3">
-                  <RadioGroupItem value="recert" id="mode-recert" disabled={isAnalyzing} className="mt-1" />
-                  <div>
-                    <p className="text-sm font-medium">Recertification (PCR)</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Compare initial vs. most-recent 60-day episode. Audit-defensible PMHx, chart story, red flags, med changes.
-                    </p>
-                  </div>
-                </div>
-              </label>
-              <label
-                htmlFor="mode-soc"
-                className={`flex-1 cursor-pointer rounded-md border p-3 transition-colors ${
-                  mode === "soc" ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
-                } ${isAnalyzing ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                <div className="flex items-start gap-3">
-                  <RadioGroupItem value="soc" id="mode-soc" disabled={isAnalyzing} className="mt-1" />
-                  <div>
-                    <p className="text-sm font-medium">Admission / Start-of-Care</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Forward-looking 485-aligned care plan, first SN visit note template, and patient/caregiver education plan.
-                    </p>
-                  </div>
-                </div>
-              </label>
+              <ModeCard
+                value="recert"
+                checked={mode === "recert"}
+                disabled={isAnalyzing}
+                title="Recertification (PCR)"
+                desc="Compare initial vs. most-recent 60-day episode. Audit-defensible PMHx, chart story, red flags, med changes."
+              />
+              <ModeCard
+                value="soc"
+                checked={mode === "soc"}
+                disabled={isAnalyzing}
+                title="Admission / Start-of-Care"
+                desc="Forward-looking 485-aligned care plan, first SN visit note template, and patient/caregiver education plan."
+              />
+              <ModeCard
+                value="snSeries"
+                checked={mode === "snSeries"}
+                disabled={isAnalyzing}
+                title="SN Visit Series (60-day)"
+                desc={
+                  socResult
+                    ? "Generates the entire 60-day cert-period of SN visit notes from the SOC result, with non-cloned vitals, education advancement, LUPA flagging, and pre-claim audit."
+                    : "Run Admission / SOC analysis first — the series generator consumes its output."
+                }
+              />
             </RadioGroup>
           </section>
 
-          {/* Upload Section */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <FileStack className="h-5 w-5 text-accent" />
-              <h2 className="text-base font-semibold">
-                {isSoc ? "Upload Admission Packet" : "Upload Recertification Packet"}
-              </h2>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
-            <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
-          </section>
+          {/* Upload Section — hidden in SN Series mode */}
+          {!isSeries && (
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <FileStack className="h-5 w-5 text-accent" />
+                <h2 className="text-base font-semibold">
+                  {isSoc ? "Upload Admission Packet" : "Upload Recertification Packet"}
+                </h2>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
+              <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
+            </section>
+          )}
+
+          {/* SN Series inputs */}
+          {isSeries && (
+            <section className="rounded-md border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-accent" />
+                <h2 className="text-base font-semibold">Series Inputs</h2>
+              </div>
+              {!socResult && (
+                <p className="text-sm text-flag">
+                  No SOC result loaded. Switch to “Admission / Start-of-Care”, run analysis, then return to this mode.
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">SOC Start Date</Label>
+                  <Input
+                    type="date"
+                    value={socStartDate}
+                    onChange={(e) => setSocStartDate(e.target.value)}
+                    disabled={isAnalyzing}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">
+                    Physician Frequency Order (e.g. <span className="font-mono">2w3, 1w6, 1w4</span>)
+                  </Label>
+                  <Input
+                    value={frequencyRaw}
+                    onChange={(e) => setFrequencyRaw(e.target.value)}
+                    disabled={isAnalyzing}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">LUPA Threshold — Period 1 (days 1–30, optional)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 4"
+                    value={lupaPeriod1}
+                    onChange={(e) => setLupaPeriod1(e.target.value)}
+                    disabled={isAnalyzing}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">LUPA Threshold — Period 2 (days 31–60, optional)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 3"
+                    value={lupaPeriod2}
+                    onChange={(e) => setLupaPeriod2(e.target.value)}
+                    disabled={isAnalyzing}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cert period: <span className="font-mono">{buildCertPeriod(socStartDate).startDate}</span> →{" "}
+                <span className="font-mono">{buildCertPeriod(socStartDate).endDate}</span> · Parsed visits:{" "}
+                <span className="font-mono">{parseFrequencyString(frequencyRaw).totalVisitsScheduled}</span>
+              </p>
+            </section>
+          )}
 
           {/* Audit settings */}
           <section className="rounded-md border border-border bg-card p-4 space-y-3">
@@ -211,7 +332,7 @@ export default function Index() {
               disabled={isAnalyzing}
             />
             <p className="text-xs text-muted-foreground">
-              The audit loop will revise the draft until STEP 6 passes or this limit is reached.
+              The audit loop will revise the draft until criteria pass or this limit is reached.
               Higher values increase quality but cost more time and credits.
             </p>
           </section>
@@ -221,13 +342,17 @@ export default function Index() {
             <Button
               size="lg"
               onClick={handleAnalyze}
-              disabled={isAnalyzing || documents.length === 0}
+              disabled={
+                isAnalyzing ||
+                (!isSeries && documents.length === 0) ||
+                (isSeries && !socResult)
+              }
               className="gap-2 px-8"
             >
               {isAnalyzing ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Analyzing Documents…
+                  Analyzing…
                 </>
               ) : (
                 <>
@@ -272,7 +397,7 @@ export default function Index() {
               </div>
             </>
           )}
-          {socResult && (
+          {socResult && mode !== "snSeries" && (
             <>
               <AdmissionAnalysisDisplay result={socResult} />
               <div className="flex justify-center pt-4">
@@ -291,8 +416,55 @@ export default function Index() {
               </div>
             </>
           )}
+          {seriesResult && (
+            <>
+              <SnVisitSeriesDisplay result={seriesResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setSeriesResult(null)}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  Clear Series
+                </Button>
+              </div>
+            </>
+          )}
         </motion.div>
       </main>
     </div>
+  );
+}
+
+function ModeCard({
+  value,
+  checked,
+  disabled,
+  title,
+  desc,
+}: {
+  value: string;
+  checked: boolean;
+  disabled: boolean;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <label
+      htmlFor={`mode-${value}`}
+      className={`cursor-pointer rounded-md border p-3 transition-colors ${
+        checked ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
+      } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+    >
+      <div className="flex items-start gap-3">
+        <RadioGroupItem value={value} id={`mode-${value}`} disabled={disabled} className="mt-1" />
+        <div>
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-xs text-muted-foreground mt-1">{desc}</p>
+        </div>
+      </div>
+    </label>
   );
 }
