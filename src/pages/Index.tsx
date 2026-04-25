@@ -5,28 +5,43 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import ReviewHeader from "@/components/ReviewHeader";
 import DocumentUploader from "@/components/DocumentUploader";
 import AnalysisDisplay from "@/components/AnalysisDisplay";
+import AdmissionAnalysisDisplay from "@/components/AdmissionAnalysisDisplay";
 import { UploadedDocument, AnalysisResult } from "@/types/pcr";
+import { SocAnalysisResult } from "@/types/soc";
 import { extractTextFromDocuments } from "@/lib/parseDocuments";
 import { analyzeDocuments } from "@/lib/analyzeDocuments";
+import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
+
+type AnalysisMode = "recert" | "soc";
 
 export default function Index() {
+  const [mode, setMode] = useState<AnalysisMode>("recert");
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [recertResult, setRecertResult] = useState<AnalysisResult | null>(null);
+  const [socResult, setSocResult] = useState<SocAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const { toast } = useToast();
 
+  const switchMode = (next: AnalysisMode) => {
+    if (isAnalyzing || next === mode) return;
+    setMode(next);
+    setDocuments([]);
+    setRecertResult(null);
+    setSocResult(null);
+  };
+
   const handleHealthCheck = async () => {
     setIsCheckingHealth(true);
     try {
-      // Send only a JSON body flag — no custom header — so the browser does not
-      // trigger a CORS preflight for a non-standard header.
-      const { data, error } = await supabase.functions.invoke("pcr-analyze", {
+      const fnName = mode === "recert" ? "pcr-analyze" : "soc-analyze";
+      const { data, error } = await supabase.functions.invoke(fnName, {
         body: { health: 1 },
       });
       if (error) throw error;
@@ -34,7 +49,7 @@ export default function Index() {
       toast({
         title: ok ? "Edge function healthy" : "Unexpected health response",
         description: ok
-          ? `pcr-analyze deployed • API key ${data.hasApiKey ? "configured" : "MISSING"} • ${data.timestamp}`
+          ? `${fnName} deployed • API key ${data.hasApiKey ? "configured" : "MISSING"} • ${data.timestamp}`
           : JSON.stringify(data),
         variant: ok && data.hasApiKey ? "default" : "destructive",
       });
@@ -60,13 +75,12 @@ export default function Index() {
     }
 
     setIsAnalyzing(true);
-    setAnalysisResult(null);
+    setRecertResult(null);
+    setSocResult(null);
 
     try {
       const extracted = await extractTextFromDocuments(documents);
 
-      // Refuse to send unreadable files to the AI — that is what produced the
-      // fully hallucinated analysis (PMHx, meds, etc. all wrong).
       const unreadable = extracted.filter((d) => !d.ok);
       if (unreadable.length === extracted.length) {
         throw new Error(
@@ -79,17 +93,21 @@ export default function Index() {
         toast({
           title: `${unreadable.length} file(s) could not be read`,
           description:
-            unreadable
-              .map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`)
-              .join("\n") +
+            unreadable.map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`).join("\n") +
             "\n\nProceeding with the readable files only.",
           variant: "destructive",
         });
       }
 
       const readable = extracted.filter((d) => d.ok);
-      const result = await analyzeDocuments(readable, { maxIterations });
-      setAnalysisResult(result);
+
+      if (mode === "recert") {
+        const result = await analyzeDocuments(readable, { maxIterations });
+        setRecertResult(result);
+      } else {
+        const result = await analyzeAdmissionDocuments(readable, { maxIterations });
+        setSocResult(result);
+      }
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
       toast({
@@ -102,6 +120,14 @@ export default function Index() {
     }
   };
 
+  const isSoc = mode === "soc";
+  const uploaderHelper = isSoc
+    ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list. Categorize each document for best results."
+    : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records. Categorize each document for best results.";
+  const analyzeButtonLabel = isSoc
+    ? "Run Admission / SOC Care-Plan Analysis"
+    : "Run PCR Recertification Analysis";
+
   return (
     <div className="min-h-screen bg-background">
       <ReviewHeader />
@@ -113,17 +139,58 @@ export default function Index() {
           transition={{ duration: 0.4 }}
           className="space-y-8"
         >
+          {/* Mode Toggle */}
+          <section className="rounded-md border border-border bg-card p-4">
+            <Label className="text-sm font-semibold mb-3 block">Analysis Mode</Label>
+            <RadioGroup
+              value={mode}
+              onValueChange={(v) => switchMode(v as AnalysisMode)}
+              className="flex flex-col sm:flex-row gap-3"
+            >
+              <label
+                htmlFor="mode-recert"
+                className={`flex-1 cursor-pointer rounded-md border p-3 transition-colors ${
+                  mode === "recert" ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
+                } ${isAnalyzing ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem value="recert" id="mode-recert" disabled={isAnalyzing} className="mt-1" />
+                  <div>
+                    <p className="text-sm font-medium">Recertification (PCR)</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Compare initial vs. most-recent 60-day episode. Audit-defensible PMHx, chart story, red flags, med changes.
+                    </p>
+                  </div>
+                </div>
+              </label>
+              <label
+                htmlFor="mode-soc"
+                className={`flex-1 cursor-pointer rounded-md border p-3 transition-colors ${
+                  mode === "soc" ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
+                } ${isAnalyzing ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem value="soc" id="mode-soc" disabled={isAnalyzing} className="mt-1" />
+                  <div>
+                    <p className="text-sm font-medium">Admission / Start-of-Care</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Forward-looking 485-aligned care plan, first SN visit note template, and patient/caregiver education plan.
+                    </p>
+                  </div>
+                </div>
+              </label>
+            </RadioGroup>
+          </section>
+
           {/* Upload Section */}
           <section>
             <div className="flex items-center gap-2 mb-4">
               <FileStack className="h-5 w-5 text-accent" />
-              <h2 className="text-base font-semibold">Upload Recertification Packet</h2>
+              <h2 className="text-base font-semibold">
+                {isSoc ? "Upload Admission Packet" : "Upload Recertification Packet"}
+              </h2>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Upload all documents for the current recertification episode — OASIS, Plan of Care,
-              F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any
-              other supporting records. Categorize each document for best results.
-            </p>
+            <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
             <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
           </section>
 
@@ -165,7 +232,7 @@ export default function Index() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Run PCR Recertification Analysis
+                  {analyzeButtonLabel}
                 </>
               )}
             </Button>
@@ -186,16 +253,35 @@ export default function Index() {
           </div>
 
           {/* Results */}
-          {analysisResult && (
+          {recertResult && (
             <>
-              <AnalysisDisplay result={analysisResult} />
+              <AnalysisDisplay result={recertResult} />
               <div className="flex justify-center pt-4">
                 <Button
                   size="lg"
                   variant="outline"
                   onClick={() => {
                     setDocuments([]);
-                    setAnalysisResult(null);
+                    setRecertResult(null);
+                  }}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  New Patient Review
+                </Button>
+              </div>
+            </>
+          )}
+          {socResult && (
+            <>
+              <AdmissionAnalysisDisplay result={socResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => {
+                    setDocuments([]);
+                    setSocResult(null);
                   }}
                   className="gap-2 px-8"
                 >
