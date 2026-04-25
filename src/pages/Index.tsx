@@ -13,6 +13,7 @@ import DocumentUploader from "@/components/DocumentUploader";
 import AnalysisDisplay from "@/components/AnalysisDisplay";
 import AdmissionAnalysisDisplay from "@/components/AdmissionAnalysisDisplay";
 import SnVisitSeriesDisplay from "@/components/SnVisitSeriesDisplay";
+import SnSingleVisitDisplay from "@/components/SnSingleVisitDisplay";
 import { UploadedDocument, AnalysisResult } from "@/types/pcr";
 import { SocAnalysisResult } from "@/types/soc";
 import { SnSeriesResult } from "@/types/snSeries";
@@ -21,10 +22,12 @@ import { analyzeDocuments } from "@/lib/analyzeDocuments";
 import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
 import { analyzeSnVisitSeries } from "@/lib/analyzeSnSeries";
 import { analyzeRecertVisitSeries } from "@/lib/analyzeRecertSeries";
+import { analyzeSnVisitDraft } from "@/lib/analyzeSnVisitDraft";
 import { parseFrequencyString, buildCertPeriod, extractSnFrequencyFromPOC } from "@/lib/parseFrequency";
 import type { RecertSeriesResult } from "@/types/recertSeries";
+import type { SnSingleVisitDraft } from "@/types/snVisitDraft";
 
-type AnalysisMode = "recert" | "soc" | "snSeries" | "recertSeries";
+type AnalysisMode = "recert" | "soc" | "snSeries" | "recertSeries" | "snQuickDraft" | "snRecertDraft";
 
 export default function Index() {
   const [mode, setMode] = useState<AnalysisMode>("recert");
@@ -33,6 +36,7 @@ export default function Index() {
   const [socResult, setSocResult] = useState<SocAnalysisResult | null>(null);
   const [seriesResult, setSeriesResult] = useState<SnSeriesResult | null>(null);
   const [recertSeriesResult, setRecertSeriesResult] = useState<RecertSeriesResult | null>(null);
+  const [draftResult, setDraftResult] = useState<SnSingleVisitDraft | null>(null);
   const [pastedPriorSeriesJson, setPastedPriorSeriesJson] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
@@ -47,6 +51,16 @@ export default function Index() {
   const [verbalOrderDate, setVerbalOrderDate] = useState<string>("");
   const [verbalOrderMd, setVerbalOrderMd] = useState<string>("");
   const [verbalOrderContent, setVerbalOrderContent] = useState<string>("");
+
+  // Single-visit draft inputs (used by snQuickDraft + snRecertDraft)
+  const [draftVisitDate, setDraftVisitDate] = useState<string>(today);
+  const [draftVisitNumber, setDraftVisitNumber] = useState<string>("");
+  const [draftWeekOfEpisode, setDraftWeekOfEpisode] = useState<string>("");
+  const [draftPatientContext, setDraftPatientContext] = useState<string>("");
+  const [draftSourceText, setDraftSourceText] = useState<string>("");
+  const [draftTeachingFocus, setDraftTeachingFocus] = useState<string>("");
+  const [draftPatientId, setDraftPatientId] = useState<string>("");
+  const [draftPatientName, setDraftPatientName] = useState<string>("");
 
   const { toast } = useToast();
 
@@ -67,23 +81,21 @@ export default function Index() {
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
     setMode(next);
+    const isDraft = next === "snQuickDraft" || next === "snRecertDraft";
     // Keep socResult when entering snSeries (it consumes it).
     // Keep documents when entering recertSeries (we just uploaded them).
     if (next !== "snSeries" && next !== "recertSeries") setDocuments([]);
     if (next === "snSeries" && documents.length > 0 && !socResult) {
-      // documents from a previous mode shouldn't leak into series-only mode
       setDocuments([]);
     }
     if (next === "recert" || next === "recertSeries") setSocResult(null);
     setRecertResult(null);
     if (next !== "snSeries") setSeriesResult(null);
     if (next !== "recertSeries") setRecertSeriesResult(null);
-    // When entering SN Series mode, pre-fill frequency from the POC if available.
+    if (!isDraft) setDraftResult(null);
     if (next === "snSeries" && socResult) {
       const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
       if (fromPoc && fromPoc.parsed.totalVisitsScheduled > 0) {
-        // Prefer the canonical form so the input is always parseable, even
-        // when the POC stored a natural-language order ("BIW x 8 weeks").
         setFrequencyRaw(fromPoc.canonical || fromPoc.raw);
       }
     }
@@ -96,7 +108,8 @@ export default function Index() {
         mode === "recert" ? "pcr-analyze"
         : mode === "soc" ? "soc-analyze"
         : mode === "snSeries" ? "sn-series-analyze"
-        : "recert-series-analyze";
+        : mode === "recertSeries" ? "recert-series-analyze"
+        : "sn-visit-draft";
       const { data, error } = await supabase.functions.invoke(fnName, { body: { health: 1 } });
       if (error) throw error;
       const ok = data?.status === "ok";
@@ -117,6 +130,70 @@ export default function Index() {
       setIsCheckingHealth(false);
     }
   };
+
+  const runSnVisitDraft = async (draftMode: "quick" | "recertNarrative") => {
+    if (draftMode === "quick" && !draftSourceText.trim() && documents.length === 0) {
+      toast({
+        title: "Source notes required",
+        description: "Paste your scribbled vitals/notes or upload a document with the visit's source data.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!draftVisitDate) {
+      toast({ title: "Visit date required", variant: "destructive" });
+      return;
+    }
+    setIsAnalyzing(true);
+    setDraftResult(null);
+    try {
+      // If documents are uploaded, extract their text and prepend to the source excerpt.
+      let combinedSource = draftSourceText.trim();
+      if (documents.length > 0) {
+        const extracted = await extractTextFromDocuments(documents);
+        const docText = extracted
+          .filter((d) => d.ok)
+          .map((d) => `--- ${d.name} ---\n${d.text}`)
+          .join("\n\n");
+        combinedSource = [combinedSource, docText].filter(Boolean).join("\n\n");
+        const unreadable = extracted.filter((d) => !d.ok);
+        if (unreadable.length > 0) {
+          toast({
+            title: `${unreadable.length} file(s) could not be read`,
+            description: unreadable.map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`).join("\n"),
+            variant: "destructive",
+          });
+        }
+      }
+      // Pull patient context from in-memory SOC if available and field is empty.
+      const inferredContext = !draftPatientContext.trim() && socResult
+        ? `Primary Dx: ${socResult.planOfCare?.primaryDx ?? ""}\nSecondary Dx: ${(socResult.planOfCare?.secondaryDx ?? []).join(", ")}\nGoals: ${(socResult.planOfCare?.measurableGoals ?? []).join("; ")}`
+        : draftPatientContext.trim();
+
+      const result = await analyzeSnVisitDraft({
+        mode: draftMode,
+        visitDate: draftVisitDate,
+        visitNumber: draftVisitNumber ? parseInt(draftVisitNumber, 10) : undefined,
+        weekOfEpisode: draftWeekOfEpisode ? parseInt(draftWeekOfEpisode, 10) : undefined,
+        patientContext: inferredContext,
+        sourceExcerpt: combinedSource,
+        teachingFocus: draftTeachingFocus.trim() || undefined,
+        patientIdentifier: draftPatientId.trim() || socResult?.patientIdentifier,
+        patientFullName: draftPatientName.trim() || socResult?.patientFullName,
+      });
+      setDraftResult(result);
+      toast({ title: "Draft generated", description: `${result.addedFields?.length ?? 0} field(s) expanded by AI — review before billing.` });
+    } catch (err: any) {
+      toast({
+        title: "Draft generation failed",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
 
   const runSnSeries = async () => {
     if (!socResult) {
@@ -267,6 +344,14 @@ export default function Index() {
       void runRecertSeries();
       return;
     }
+    if (mode === "snQuickDraft") {
+      void runSnVisitDraft("quick");
+      return;
+    }
+    if (mode === "snRecertDraft") {
+      void runSnVisitDraft("recertNarrative");
+      return;
+    }
     if (documents.length === 0) {
       toast({
         title: "No documents uploaded",
@@ -324,19 +409,33 @@ export default function Index() {
   const isSoc = mode === "soc";
   const isSeries = mode === "snSeries";
   const isRecertSeries = mode === "recertSeries";
-  const isUploadMode = !isSeries; // recertSeries also uploads documents
+  const isQuickDraft = mode === "snQuickDraft";
+  const isRecertDraft = mode === "snRecertDraft";
+  const isDraft = isQuickDraft || isRecertDraft;
+  // Upload section is shown for everything except snSeries (which consumes SOC) and snRecertDraft (uses paste/context).
+  // snQuickDraft and snRecertDraft both allow optional document upload alongside the textarea.
+  const isUploadMode = !isSeries;
   const uploaderHelper = isSoc
     ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list."
     : isRecertSeries
     ? "Upload the RECERTIFICATION packet for the next 60-day cert period — Recert OASIS, updated 485 / Plan of Care, most recent physician orders, current medication profile, specialist visits, lab work, and recent SN / SOAP notes."
+    : isQuickDraft
+    ? "Optional: upload a typed vitals sheet, lab printout, or text-based PDF for this single visit. You can also just paste the source text below."
+    : isRecertDraft
+    ? "Optional: upload the recert OASIS / updated POC / med list as supporting context. The narrative is built primarily from the patient context and teaching focus you provide."
     : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records.";
   const analyzeButtonLabel = isSeries
     ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} SN Visit Notes (60-day cert)`
     : isRecertSeries
     ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} Recert SN Visit Notes (next 60 days)`
+    : isQuickDraft
+    ? "Expand My Notes Into a Billable SN Visit"
+    : isRecertDraft
+    ? "Generate Narrative Recert SN Visit Note"
     : isSoc
     ? "Run Admission / SOC Care-Plan Analysis"
     : "Run PCR Recertification Analysis";
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -355,7 +454,7 @@ export default function Index() {
             <RadioGroup
               value={mode}
               onValueChange={(v) => switchMode(v as AnalysisMode)}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
             >
               <ModeCard
                 value="recert"
@@ -376,7 +475,7 @@ export default function Index() {
                 checked={mode === "recertSeries"}
                 disabled={isAnalyzing}
                 title="Recert Visit Series (next 60d)"
-                desc="Generates the next 60-day SN visit series from a fresh recertification packet, with education continuity (drops mastered topics, carries forward in-progress)."
+                desc="Generates the next 60-day SN visit series from a fresh recertification packet, with education continuity."
               />
               <ModeCard
                 value="snSeries"
@@ -385,9 +484,23 @@ export default function Index() {
                 title="SN Visit Series (60-day)"
                 desc={
                   socResult
-                    ? "Generates the entire 60-day cert-period of SN visit notes from the SOC result, with non-cloned vitals, education advancement, LUPA flagging, and pre-claim audit."
+                    ? "Generates the entire 60-day cert-period of SN visit notes from the SOC result."
                     : "Run Admission / SOC analysis first — the series generator consumes its output."
                 }
+              />
+              <ModeCard
+                value="snQuickDraft"
+                checked={mode === "snQuickDraft"}
+                disabled={isAnalyzing}
+                title="Quick SN Visit Draft"
+                desc="Paste your scribbled vitals / quick notes from one visit. Get a polished, billable SN visit note — without inventing vitals you didn't take."
+              />
+              <ModeCard
+                value="snRecertDraft"
+                checked={mode === "snRecertDraft"}
+                disabled={isAnalyzing}
+                title="Narrative Recert Visit Note"
+                desc="Single SN visit note for the recert OASIS period — no vitals (they go on OASIS), heavy on assessment, interventions, deep education, COC, and next-visit focus."
               />
             </RadioGroup>
           </section>
@@ -398,13 +511,107 @@ export default function Index() {
               <div className="flex items-center gap-2 mb-4">
                 <FileStack className="h-5 w-5 text-accent" />
                 <h2 className="text-base font-semibold">
-                  {isSoc ? "Upload Admission Packet" : isRecertSeries ? "Upload Recertification Packet" : "Upload Recertification Packet"}
+                  {isSoc
+                    ? "Upload Admission Packet"
+                    : isRecertSeries
+                    ? "Upload Recertification Packet"
+                    : isQuickDraft
+                    ? "Upload Source Notes (optional)"
+                    : isRecertDraft
+                    ? "Upload Recert Packet (optional)"
+                    : "Upload Recertification Packet"}
                 </h2>
               </div>
               <p className="text-sm text-muted-foreground mb-4">{uploaderHelper}</p>
               <DocumentUploader documents={documents} onDocumentsChange={setDocuments} />
             </section>
           )}
+
+          {/* Single-visit Draft inputs */}
+          {isDraft && (
+            <section className="rounded-md border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-accent" />
+                <h2 className="text-base font-semibold">
+                  {isQuickDraft ? "Quick Visit Inputs" : "Recert Narrative Inputs"}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Visit Date</Label>
+                  <Input type="date" value={draftVisitDate} onChange={(e) => setDraftVisitDate(e.target.value)} disabled={isAnalyzing} />
+                </div>
+                <div>
+                  <Label className="text-xs">Visit # (optional)</Label>
+                  <Input type="number" min={1} value={draftVisitNumber} onChange={(e) => setDraftVisitNumber(e.target.value)} disabled={isAnalyzing} />
+                </div>
+                <div>
+                  <Label className="text-xs">Week of episode (optional)</Label>
+                  <Input type="number" min={1} max={9} value={draftWeekOfEpisode} onChange={(e) => setDraftWeekOfEpisode(e.target.value)} disabled={isAnalyzing} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Patient identifier (optional)</Label>
+                  <Input value={draftPatientId} onChange={(e) => setDraftPatientId(e.target.value)} disabled={isAnalyzing} placeholder="MR# or initials" />
+                </div>
+                <div>
+                  <Label className="text-xs">Patient full name (optional)</Label>
+                  <Input value={draftPatientName} onChange={(e) => setDraftPatientName(e.target.value)} disabled={isAnalyzing} placeholder="Used only on the cover, not in narrative" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">
+                  Patient context — Dx, current meds, key goals
+                  {socResult && !draftPatientContext.trim() && (
+                    <span className="ml-1 text-muted-foreground">(will auto-fill from in-memory SOC if left blank)</span>
+                  )}
+                </Label>
+                <textarea
+                  value={draftPatientContext}
+                  onChange={(e) => setDraftPatientContext(e.target.value)}
+                  disabled={isAnalyzing}
+                  rows={3}
+                  placeholder="e.g. T2DM on metformin 1000 mg BID + new insulin glargine 10u qHS; HTN on lisinopril 20 mg; goal: FSBG 80-180 within 30 days; homebound: SOB on exertion < 20 ft."
+                  className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm"
+                />
+              </div>
+              {isQuickDraft && (
+                <div>
+                  <Label className="text-xs">
+                    Source notes — paste your scribbled vitals / quick notes for THIS visit
+                    <span className="text-flag ml-1">(required unless you upload a document above)</span>
+                  </Label>
+                  <textarea
+                    value={draftSourceText}
+                    onChange={(e) => setDraftSourceText(e.target.value)}
+                    disabled={isAnalyzing}
+                    rows={6}
+                    placeholder={`e.g.\n11/12/26 - BP 138/82, HR 78, SpO2 96%, FSBG 162 fasting\nNew insulin glargine 10u qHS started by Dr. Smith yesterday\nTaught insulin injection sites - rotated abdomen, pt returned demo correctly\nCalled MD re: foot ulcer left heel - new order for dressing change M/W/F`}
+                    className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The AI will EXPAND these into a billable note, but will NOT invent vitals you didn't write down — missing fields are flagged.
+                  </p>
+                </div>
+              )}
+              {isRecertDraft && (
+                <div>
+                  <Label className="text-xs">Teaching focus (optional)</Label>
+                  <Input
+                    value={draftTeachingFocus}
+                    onChange={(e) => setDraftTeachingFocus(e.target.value)}
+                    disabled={isAnalyzing}
+                    placeholder="e.g. New metformin + low-Na diet + foot care for diabetic neuropathy"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Vitals are deliberately omitted — they live in the Recert OASIS. The note focuses on assessment, interventions, deep education (what / why / diet / lifestyle / safety / teach-back), COC, and next-visit focus.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
 
           {/* SN Series inputs */}
           {(isSeries || isRecertSeries) && (
@@ -580,7 +787,8 @@ export default function Index() {
               onClick={handleAnalyze}
               disabled={
                 isAnalyzing ||
-                (isUploadMode && documents.length === 0) ||
+                (isUploadMode && !isDraft && documents.length === 0) ||
+                (isQuickDraft && !draftSourceText.trim() && documents.length === 0) ||
                 (isSeries && !socResult) ||
                 (isSeries && !freqGateOk) ||
                 (isRecertSeries && parseFrequencyString(frequencyRaw).totalVisitsScheduled === 0)
@@ -719,6 +927,22 @@ export default function Index() {
                 >
                   <FileStack className="h-4 w-4" />
                   Clear Recert Series
+                </Button>
+              </div>
+            </>
+          )}
+          {draftResult && (
+            <>
+              <SnSingleVisitDisplay draft={draftResult} />
+              <div className="flex justify-center pt-4">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setDraftResult(null)}
+                  className="gap-2 px-8"
+                >
+                  <FileStack className="h-4 w-4" />
+                  Clear Draft
                 </Button>
               </div>
             </>
