@@ -1,202 +1,145 @@
-# Add SN Visit Series Generator (Mode 3) — adapted to your spec
+## Goal
 
-## What changes from the prior plan
+Two related changes that share the same architecture:
 
-The current SOC mode produces a **single** first SN visit note + a flat education plan with deep teach-back narratives. Per your latest direction, we now add a **third mode** that takes the SOC output (or a fresh upload of admission docs + the prior SOC JSON) and generates the **entire 60-day certification period** of SN visit notes, with non-repeating education and a longitudinal anti-clone audit. The first two modes (Recertification, SOC/Admission) are unchanged.
-
-### Specific changes you called out
-1. **Education plan = flat topic list** with per-visit assignment + `education_log` + advancement logic (basic → intermediate → advanced, skip-if-mastered).
-2. **Plan of Care embedded** in the SN Visit Series output: 485-aligned, with primary dx, secondary dx, homebound justification, skilled need rationale, measurable goals, discipline orders, DME/supplies — **NO discharge planning** (removed entirely from this deliverable; we will also remove it from the SOC Plan-of-Care output to stay consistent, since discharge planning belongs to the discharge OASIS, not SOC).
-3. **Variable visit frequency** parsed from physician orders (e.g., `2w3,1w6,1w4` → wk1–3 BIW, wk4–9 weekly, wk10–13 weekly = 18 visits) and distributed across the **60-day certification period** instead of "3–5 episodes."
-4. **Secondary anti-clone audit gate**: time-stamped objective findings (vitals BP/HR/RR/SpO2/T, weight, FSBG, wound L×W×D + tissue type, pain 0–10, edema grade, lung sounds, bowel sounds, ambulation distance) must **vary visit-to-visit within physiologically plausible ranges**. Exact-duplicate vitals across consecutive visits → audit FAIL with the offending visit IDs.
-5. **LUPA flagging** per 30-day PDGM payment period (visit count below CMS LUPA threshold for the assigned HHRG → flag with $ impact warning).
-6. **Pre-claim / TPE / UPIC posture**: every visit note carries source-doc citations, the audit gate is set to "no-tolerance" mode (zero `[NOT DOCUMENTED]` placeholders allowed in billable narrative fields — they must be either filled from source or the visit is flagged non-billable draft), and the export bundle includes a per-visit compliance checklist.
+1. **Bind the SN Visit Series to the physician-ordered frequency on the 485** so the app cannot silently drift from what the POC actually orders.
+2. **Add a fourth mode — "Recert Visit Series"** — that generates SN visit notes for a *subsequent* 60-day cert period using freshly uploaded recertification documents (Recert OASIS, updated 485/POC, latest physician orders, current med profile, specialist notes, labs, recent SOAP/SN notes). Education topics advance from where the prior period left off — no repeats of mastered content.
 
 ---
 
-## Workflow (user-visible)
+## Part 1 — POC-ordered frequency becomes the source of truth
+
+### Behavior
+
+- When the user opens **SN Visit Series** mode, the app reads `socResult.planOfCare.disciplineOrders` and finds the SN entry. Its `frequencyDuration` (e.g., `"2w8"`, `"2w3, 1w6, 1w4"`) becomes the **default** value of the frequency input.
+- A read-only chip shows the **POC-ordered frequency** next to the input with a "Use POC frequency" button.
+- If the user types something different, a yellow warning chip appears: *"Differs from physician orders — verbal order required."*
+- A new optional field, **Verbal Order Reference** (date + ordering MD), unlocks override. Without it, the Generate button is disabled when the typed frequency's total visits ≠ the POC's parsed total.
+- The verbal order, if provided, is passed to the edge function and recorded in every visit note's `coordinationOfCare` and in `preClaimChecklist.notes`.
+
+### Edge function changes (`sn-series-analyze`)
+
+- Accept new fields: `expectedFrequencyFromPOC` (string), `verbalOrder` (`{date, orderingMd, content} | null`).
+- Add audit criterion **(k)**: `frequencyOrder.raw` must match `expectedFrequencyFromPOC` **OR** `verbalOrder` must be present. Failure code `FREQ_POC_MISMATCH` (severity high) blocks `longitudinalAudit.pass`.
+- When `verbalOrder` is present, the system prompt instructs the model to cite it in `preClaimChecklist.notes` and in the first visit's `coordinationOfCare`.
+
+### Files touched (Part 1)
+
+- `src/lib/parseFrequency.ts` — add `extractSnFrequencyFromPOC(disciplineOrders)` helper that finds the SN order and parses it.
+- `src/pages/Index.tsx` — pre-fill `frequencyRaw` from `socResult` on mode switch; render POC chip + warning + verbal-order field; gate the Generate button.
+- `src/lib/analyzeSnSeries.ts` — forward `expectedFrequencyFromPOC` and `verbalOrder` to the edge function.
+- `supabase/functions/sn-series-analyze/index.ts` — accept the new fields, inject into system prompt, add audit criterion (k).
+- `src/types/snSeries.ts` — add `verbalOrder` field on `SnSeriesResult` and the new audit code.
+
+---
+
+## Part 2 — Recert Visit Series (subsequent 60-day periods)
+
+### Why a separate mode (vs. reusing SN Visit Series)
+
+The SOC mode is admission-specific: it builds a 485 from intake docs and seeds *first-time* education topics. A recertification cycle uses a **Recert OASIS**, an **updated POC**, fresh **physician orders**, and — critically — must **continue** education from the prior episode without re-teaching mastered topics. Different inputs, different audit posture, different output framing. It earns its own mode.
+
+### Flow
 
 ```text
-┌───────────────────────────────────────────────────────────────────┐
-│ Analysis Mode:                                                     │
-│  ( ) Recertification                                               │
-│  ( ) Admission / SOC                                               │
-│  (•) SN Visit Series  (requires: completed SOC analysis)           │
-└───────────────────────────────────────────────────────────────────┘
+[Recert Mode]
+   │
+   ▼
+1. Upload Recert packet (Recert OASIS, updated 485/POC, latest MD orders,
+   current med profile, specialist notes, labs, recent SN/SOAP notes)
+   │
+   ▼
+2. (Optional) Attach prior SN Series result — JSON paste OR auto-pickup
+   from the in-memory result if user just finished one.
+   │
+   ▼
+3. Edge function `recert-series-analyze`:
+   a. Parses Recert OASIS + updated POC → produces a refreshed
+      `planOfCare` (same shape as SOC POC, no discharge planning)
+   b. Reconciles education topics:
+        • Drops mastered topics
+        • Carries forward in-progress topics
+        • Adds new topics for new dx / new meds / new orders
+   c. Generates the full 60-day SN visit series for the new cert
+      period using the same audit loop as `sn-series-analyze`
+   │
+   ▼
+4. Display results (reuses SnVisitSeriesDisplay) + export
 ```
 
-Selecting **SN Visit Series** when no SOC result exists prompts the user to either (a) run SOC first, or (b) paste/upload a previously-exported SOC JSON. The series generator then takes:
-- The SOC `planOfCare`, `educationPlan` (used as the topic seed bank), `redFlags`, `sourceTable`.
-- A **physician-orders frequency string** (parsed automatically from uploaded orders if present, otherwise user-entered: e.g., `2w3, 1w6, 1w4`).
-- A **SOC start date** (defaults to today, user-editable).
-- The **PDGM HHRG / LUPA threshold** if the user knows it (optional; if blank we flag visits/period as informational only).
+### Education continuity logic
 
-It returns one structured result containing the embedded POC, the visit schedule, every visit note, the education log, the longitudinal audit gate, and per-30-day LUPA status.
+- New helper `reconcileEducationTopics(prior, newSocSeed)`:
+  - **Drop** any topic where `priorEducationLog[topicId].masteredAt != null`.
+  - **Carry forward** topics that are in-progress (`firstTaught != null && masteredAt == null`) at their current level.
+  - **Add** topics seeded from new dx/meds/orders not present in prior list.
+  - Pass the reconciled list + a `priorEducationLog` snapshot to the edge function so it does not re-teach mastered content.
+
+### Recert-specific audit additions
+
+- `RECERT_MASTERED_TOPIC_RETAUGHT` — high severity if any visit teaches a topic flagged mastered in the prior log.
+- `RECERT_NEW_DX_NOT_ADDRESSED` — medium if a dx present in updated POC but absent in prior POC has zero teaching/intervention.
+- `RECERT_NO_FREQ_CHANGE_RATIONALE` — medium if frequency order differs from prior period and no rationale appears in `coordinationOfCare` of visit #1.
+
+### Files added (Part 2)
+
+- `supabase/functions/recert-series-analyze/index.ts` — new edge function. Same security/CORS/health-probe pattern. System prompt extends the SN-series prompt with the recert-specific rules.
+- `src/lib/analyzeRecertSeries.ts` — client wrapper, mirrors `analyzeSnSeries.ts`.
+- `src/lib/reconcileEducation.ts` — pure helper for topic carry-forward.
+- `src/types/recertSeries.ts` — `RecertSeriesResult` extends `SnSeriesResult` with `priorEpisodeRef`, `educationCarriedForward[]`, `educationDropped[]`, `newDxAddressed[]`.
+
+### Files modified (Part 2)
+
+- `src/pages/Index.tsx` — fourth mode card "Recert Visit Series". New uploader helper text listing the recert packet docs. Optional "Paste prior series JSON" textarea OR auto-detect if `seriesResult` already in state. SOC start date input becomes "Recert episode start date".
+- `src/components/SnVisitSeriesDisplay.tsx` — small additions to surface "Education carried forward / dropped / new" panel when present.
+- `src/lib/exportReports.ts` — recert-mode export adds the carry-forward summary.
 
 ---
 
-## Output contract (new edge function: `sn-series-analyze`)
+## UX summary
+
+**Mode toggle (4 cards):**
 
 ```text
-{
-  patientIdentifier, patientFullName,
-  certPeriod { startDate, endDate, day60 },
-  frequencyOrder { raw, parsed[ {weeksLabel, visitsPerWeek, weeks, totalVisits} ], totalVisitsScheduled },
-
-  planOfCare {                          // 485-aligned, NO discharge planning
-    primaryDx, secondaryDx[],
-    homeboundJustification,
-    skilledNeedRationale,
-    measurableGoals[],                  // each: {goal, targetVisit or targetDate, measurement}
-    disciplineOrders[],                 // SN/PT/OT/ST/MSW/HHA with freq+duration
-    dmeSupplies
-  },
-
-  educationTopics[                      // FLAT LIST (your spec)
-    {
-      id, topic, linkedDxOrMed,
-      level: "basic" | "intermediate" | "advanced",
-      prerequisiteIds[],
-      teachBackQuestions[],
-      teachingScript                    // 1 paragraph plain-language script
-    }
-  ],
-
-  visits[
-    {
-      visitId, visitNumber, visitDate, weekOfEpisode, pdgmPeriod: 1|2,
-      visitType: "SN-Assessment" | "SN-Skilled" | "SN-Recert" | "SN-Discharge",
-      subjective,                       // pt/cg report THIS visit
-      objective {                       // time-stamped, must vary across visits
-        timestamp, bp, hr, rr, spo2, temp, weight,
-        fsbg?, painScore, edema?, lungSounds?, bowelSounds?,
-        wound? { location, lengthCm, widthCm, depthCm, tissueType, drainage, periwound },
-        ambulationDistanceFt?, transferAssist?
-      },
-      assessment,                       // clinical interpretation tied to POC dx
-      plannedInterventions[],
-      educationDelivered[ { topicId, response, comprehensionPct, masteryReached } ],
-      skilledJustification,             // why SN was needed THIS visit
-      coordinationOfCare?,              // PT/OT/MD calls etc.
-      goalsProgress[ { goalRef, status: "met"|"progressing"|"no-change"|"regressed", evidence } ],
-      nextVisitFocus,
-      sources[ {field, sourceDoc} ],
-      flags[]                           // per-visit issues (missing sig, missing F2F link, etc.)
-    }
-  ],
-
-  educationLog [                        // derived from visits[].educationDelivered
-    { topicId, topic, level,
-      firstTaught: visitId, reinforcedAt: visitId[],
-      masteredAt: visitId | null, advancedToTopicId: id | null }
-  ],
-
-  episodeSummaries[                     // one per PDGM 30-day period
-    { period: 1|2, visitsCompleted, visitsScheduled, lupaThreshold,
-      lupaRisk: "below"|"at"|"above"|"unknown", lupaImpactNote,
-      progress: "improved"|"stable"|"declined", keyInterventions[], remainingNeeds[] }
-  ],
-
-  longitudinalAudit {
-    pass, failures[ { code, severity, message, offendingVisitIds[] } ]
-  },
-
-  preClaimChecklist {                   // per-visit + per-period roll-up
-    f2fLinked, ordersOnFile, oasisCongruent,
-    measurableGoalsTied, homeboundJustifiedEachVisit,
-    educationProgressionDocumented, noClonedObjectiveFindings,
-    lupaAddressed, billableDraftReady
-  }
-}
+[ Recertification (PCR) ]   [ Admission / SOC ]
+[ SN Visit Series (60d) ]   [ Recert Visit Series (subsequent 60d) ]
 ```
 
----
+**SN Visit Series mode header now shows:**
 
-## Audit gates (longitudinal — runs after generation)
+```text
+POC frequency (from 485):  2w8                    [Use POC frequency]
+Your frequency:            [ 2w8                ]
+✓ Matches physician orders
+```
 
-The model is forced through a STEP-6-style audit loop (same `maxIterations` slider). Failure = re-generate with revision instructions. Hard-fail criteria:
+or, on mismatch:
 
-1. **Anti-clone vitals**: any two consecutive visits with **identical** BP, HR, RR, SpO2, weight, or pain score → FAIL. (Plausibility ranges enforced: BP ±2–15 mmHg between visits, HR ±2–10, weight ±0.0–1.5 lb/visit unless documented edema event.)
-2. **Wound progression**: if a wound is in the POC, every wound visit must record L×W×D and tissue type; measurements must trend (improve, plateau, or worsen) — flat values across 3+ visits → FAIL with rationale required.
-3. **Education non-repetition**: a topic at the same `level` cannot be the *primary* teaching focus on 3+ consecutive visits unless `masteryReached=false` is documented with the comprehension % regressing or stalled — otherwise FAIL ("clone teaching").
-4. **Goal traceability**: every visit must update at least one `goalsProgress[]` entry; goals never updated across the cert period → FAIL.
-5. **Homebound restated each visit** with at least one specific clinical driver — generic restatement → FAIL.
-6. **Skilled need restated each visit** with that visit's specific skilled action → FAIL otherwise.
-7. **Frequency adherence**: scheduled visits must equal `totalVisitsScheduled` from parsed orders; gaps > expected interval → flag (not auto-fail; surfaces as red flag with "missed visit" note for biller).
-8. **No `[NOT DOCUMENTED]` in billable fields** (subjective, objective.timestamp, assessment, skilledJustification): if source data is missing the visit is marked `billableDraftReady=false` and listed for clinician completion before claim submission.
-9. **F2F linkage**: each PDGM period roll-up must reference the F2F encounter by date+provider, otherwise FAIL.
-10. **LUPA**: if `visitsCompleted < lupaThreshold` for a 30-day period and threshold is known, surface as severity=high in `episodeSummaries`.
+```text
+POC frequency (from 485):  2w8
+Your frequency:            [ 2w3, 1w6, 1w4     ]
+⚠ Differs from physician orders — enter verbal order to proceed
+Verbal order:  Date [____]  Ordering MD [____________]  Content [______________]
+```
 
----
+**Recert Visit Series mode adds:**
 
-## Education advancement logic (deterministic, post-LLM)
-
-Topics are stored flat with `level` and `prerequisiteIds`. After the LLM produces visits, a client-side reducer walks visit order and:
-
-- Picks 1–3 topics per visit from the lowest unmastered level whose prerequisites are met.
-- A topic is `masteredAt` when comprehension ≥ 80% AND teach-back successful on 2 separate visits.
-- On mastery, the next-level topic in the same domain is unlocked (`advancedToTopicId`).
-- A topic cannot be the primary focus on 3+ consecutive visits without a documented stall.
-- Final `educationLog` is recomputed from visits and re-injected into the audit gate.
-
-This makes the progression auditable and reproducible regardless of LLM variance.
+- Upload section labeled *"Upload Recertification Packet"* with the doc list from your message.
+- Collapsible *"Prior episode (optional but recommended)"* — auto-filled if a series was just generated, or accepts pasted JSON.
 
 ---
 
-## Frequency parser (deterministic, runs before LLM)
+## Out of scope / explicitly NOT changing
 
-Input: `"2w3, 1w6, 1w4"` (or per-discipline: `"SN: 2w3,1w6,1w4 / PT: 1w4 / HHA: 2w9"`).
-Parsed: blocks of `{visitsPerWeek, weeks}`. Sum visits, distribute on a Mon/Wed/Fri (BIW), Mon/Wed/Fri (TIW), or weekly Tue pattern. SOC visit = visit #1, day 0. Cert end = day 60. PDGM periods: day 1–30, day 31–60. Total visits and per-period counts feed LUPA logic and audit gate #7.
-
-If parsing fails or the user enters free-text, we surface a small editable schedule table before calling the LLM so the clinician confirms dates.
-
----
-
-## Compliance/clinical concerns folded in
-
-- **Texas + HHVBP + HOPE**: HHVBP scoring relies on OASIS GG-items + claims-based measures; we add a per-visit `ggItemsTouched[]` field (mobility, self-care) and roll it into the period summary so claims-based measure capture is documented. HOPE goes live nationally Jan 1 2025 for hospice — included as a future-proof flag only (not mandatory for HHA, but Texas reviewers reference it; we surface a note rather than enforce).
-- **PDGM 30-day billing periods**: explicit `pdgmPeriod` on every visit; LUPA computed per period (not per cert).
-- **Pre-claim review (TPE/UPIC/RCD)**: zero-tolerance audit means the bundle is submission-defensible. Each visit note exports with its source-citation footer.
-- **Anti-clone**: the secondary objective-finding variance check you asked for is gate #1 above and is enforced both by the LLM prompt and a post-hoc deterministic comparator (so we don't rely on the model alone).
-- **Discharge planning removed** from POC per your instruction (kept goals + DME).
-- **HIPAA**: same rule as existing modes — `Pt`/initials in narrative, real name only in the filename field.
+- No discharge planning anywhere (already removed; staying out).
+- No persistence layer yet — prior-episode handoff is in-memory or paste-JSON. A persistence layer (so prior episodes survive a refresh) is the obvious next step but not included here unless you ask.
+- No multi-discipline scheduling (PT/OT/ST). Series remains SN-only; other disciplines are still surfaced in the POC display.
 
 ---
 
-## Files
+## Deliverable order
 
-**Add**
-- `supabase/functions/sn-series-analyze/index.ts` — edge function (mirrors `soc-analyze` security/CORS/health-probe pattern, uses `google/gemini-2.5-pro` for clinical depth, single tool call `sn_visit_series` returning the contract above, audit loop with the 10 gates).
-- `src/types/snSeries.ts` — types for the contract.
-- `src/lib/parseFrequency.ts` — pure function: frequency string → schedule + PDGM split. Includes unit-test stub.
-- `src/lib/educationAdvancement.ts` — deterministic post-processor for education_log + advancement.
-- `src/lib/objectiveFindingsAudit.ts` — deterministic anti-clone comparator.
-- `src/lib/analyzeSnSeries.ts` — client wrapper (mirrors `analyzeAdmission.ts`).
-- `src/components/SnVisitSeriesDisplay.tsx` — renders embedded POC, visit list (collapsible per visit), education log table, episode summaries with LUPA badges, longitudinal audit panel, pre-claim checklist.
-
-**Edit**
-- `src/pages/Index.tsx` — extend `mode` to `"recert" | "soc" | "snSeries"`. Add the third radio. Gate enabling `snSeries` on `socResult` being present (or allow JSON paste). Branch render to `SnVisitSeriesDisplay`. Extend health-check to probe `sn-series-analyze` when active.
-- `src/lib/exportReports.ts` — add exporters: full series PDF/DOCX bundle, per-visit DOCX, education log CSV, pre-claim checklist DOCX, audit JSON.
-- `src/types/soc.ts` and `supabase/functions/soc-analyze/index.ts` — **remove `dischargePlanning`** from `SocPlanOfCare` and from the SOC tool schema/prompt to keep POC consistent across modes (per your instruction). The first SN visit note inside SOC mode stays; the series mode supersedes it when the user wants the whole cert period.
-
-**Unchanged**
-- `pcr-analyze` (Recertification) untouched.
-- All existing UI styling tokens / theme.
-
----
-
-## Edge cases handled
-
-- Frequency string omitted → user gets an inline editable schedule grid before submit.
-- SOC result older than 60 days from chosen start date → warning ("SOC data may be stale; re-run SOC?").
-- Wound-care orders absent → wound block omitted from objective.
-- LUPA threshold unknown → period is marked `lupaRisk: "unknown"` with guidance ("enter HHRG to compute").
-- Series payload too large for one LLM call → orchestrator splits by PDGM period (period 1 then period 2), stitches results, and runs the longitudinal audit across the merged set.
-
----
-
-## What this gives you
-
-A defensible, billable-draft 60-day SN visit series that: parses real physician-order frequency strings, produces non-cloned objective findings, advances education without repetition, ties every visit back to the POC and to source documents, surfaces LUPA risk per PDGM period, and exits a longitudinal audit gate before the bundle is exported for pre-claim or final-claim review.
-
-Approve and I'll implement.
+1. Part 1 (POC frequency binding) — small, high-value, fully isolated.
+2. Part 2 (Recert Visit Series mode) — new edge function + new mode + education reconciliation.
+3. Health-check button auto-routes to the new function when the mode is active.
+4. Verify with a dry-run health probe on the new function after deploy.
