@@ -20,7 +20,7 @@ import { extractTextFromDocuments } from "@/lib/parseDocuments";
 import { analyzeDocuments } from "@/lib/analyzeDocuments";
 import { analyzeAdmissionDocuments } from "@/lib/analyzeAdmission";
 import { analyzeSnVisitSeries } from "@/lib/analyzeSnSeries";
-import { parseFrequencyString, buildCertPeriod } from "@/lib/parseFrequency";
+import { parseFrequencyString, buildCertPeriod, extractSnFrequencyFromPOC } from "@/lib/parseFrequency";
 
 type AnalysisMode = "recert" | "soc" | "snSeries";
 
