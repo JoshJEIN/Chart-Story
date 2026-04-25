@@ -317,11 +317,17 @@ export default function Index() {
 
   const isSoc = mode === "soc";
   const isSeries = mode === "snSeries";
+  const isRecertSeries = mode === "recertSeries";
+  const isUploadMode = !isSeries; // recertSeries also uploads documents
   const uploaderHelper = isSoc
     ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list."
+    : isRecertSeries
+    ? "Upload the RECERTIFICATION packet for the next 60-day cert period — Recert OASIS, updated 485 / Plan of Care, most recent physician orders, current medication profile, specialist visits, lab work, and recent SN / SOAP notes."
     : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records.";
   const analyzeButtonLabel = isSeries
     ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} SN Visit Notes (60-day cert)`
+    : isRecertSeries
+    ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} Recert SN Visit Notes (next 60 days)`
     : isSoc
     ? "Run Admission / SOC Care-Plan Analysis"
     : "Run PCR Recertification Analysis";
