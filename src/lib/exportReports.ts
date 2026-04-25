@@ -401,10 +401,6 @@ export function generateSocPlanOfCareReport(result: SocAnalysisResult): void {
   lines.push(SOC_MINOR);
   lines.push(poc?.dmeSupplies || "(none)");
   lines.push("");
-  lines.push("DISCHARGE PLANNING");
-  lines.push(SOC_MINOR);
-  lines.push(poc?.dischargePlanning || "(none)");
-  lines.push("");
   if (result.medicationReconciliation?.length) {
     lines.push("MEDICATION RECONCILIATION FLAGS");
     lines.push(SOC_MINOR);
@@ -519,6 +515,242 @@ export function generateSocAuditQAJSON(result: SocAnalysisResult): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.txt$/, ".json");
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// =====================================================================
+// SN VISIT SERIES EXPORTERS
+// =====================================================================
+
+import type { SnSeriesResult } from "@/types/snSeries";
+
+const SN_MAJOR = "=".repeat(70);
+const SN_MINOR = "-".repeat(70);
+
+function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "txt"): string {
+  const pt = sanitizeForFilename(result.patientFullName || result.patientIdentifier || "Unknown_Pt");
+  const start = result.certPeriod?.startDate ?? "unknown_start";
+  const gen = formatFileDate(result.generatedAt);
+  return `${prefix}_${pt}_cert_${start}_generated_${gen}.${ext}`;
+}
+
+function snHeader(title: string, result: SnSeriesResult): string[] {
+  return [
+    SN_MAJOR,
+    title,
+    SN_MAJOR,
+    `Patient: ${result.patientIdentifier || "Unknown"}`,
+    `Cert Period: ${result.certPeriod?.startDate ?? "—"} → ${result.certPeriod?.endDate ?? "—"} (60 days)`,
+    `Frequency Order: ${result.frequencyOrder?.raw ?? "—"} (${result.frequencyOrder?.totalVisitsScheduled ?? 0} SN visits)`,
+    `Generated: ${result.generatedAt.toLocaleDateString()}`,
+    SN_MAJOR,
+    "",
+  ];
+}
+
+export function generateSnSeriesBundle(result: SnSeriesResult): void {
+  const lines = snHeader("SN VISIT SERIES — FULL CERT-PERIOD BUNDLE", result);
+
+  // Plan of Care
+  lines.push("PLAN OF CARE (485-aligned, no discharge planning)");
+  lines.push(SN_MINOR);
+  lines.push(`Primary Dx: ${result.planOfCare?.primaryDx ?? "(none)"}`);
+  if (result.planOfCare?.secondaryDx?.length) {
+    lines.push(`Secondary Dx:`);
+    result.planOfCare.secondaryDx.forEach((d) => lines.push(`  • ${d}`));
+  }
+  lines.push("");
+  lines.push("Homebound Justification:");
+  lines.push(result.planOfCare?.homeboundJustification ?? "(none)");
+  lines.push("");
+  lines.push("Skilled Need Rationale:");
+  lines.push(result.planOfCare?.skilledNeedRationale ?? "(none)");
+  lines.push("");
+  lines.push("Measurable Goals (timed):");
+  (result.planOfCare?.measurableGoals ?? []).forEach((g, i) => lines.push(`  ${i + 1}. ${g}`));
+  lines.push("");
+  lines.push("Discipline Orders:");
+  (result.planOfCare?.disciplineOrders ?? []).forEach((d) => {
+    lines.push(`  ${d.discipline} — ${d.frequencyDuration}`);
+    lines.push(`    ${d.interventions}`);
+  });
+  lines.push("");
+  lines.push(`DME / Supplies: ${result.planOfCare?.dmeSupplies ?? "(none)"}`);
+  lines.push("");
+
+  // Episode summaries
+  lines.push(SN_MAJOR);
+  lines.push("PDGM 30-DAY PERIOD SUMMARIES");
+  lines.push(SN_MINOR);
+  (result.episodeSummaries ?? []).forEach((ep) => {
+    lines.push(
+      `Period ${ep.period}: ${ep.visitsCompleted}/${ep.visitsScheduled} visits · LUPA ${ep.lupaRisk}` +
+      (ep.lupaThreshold != null ? ` (threshold ${ep.lupaThreshold})` : ""),
+    );
+    lines.push(`  ${ep.lupaImpactNote}`);
+    lines.push(`  Progress: ${ep.progress}`);
+    if (ep.keyInterventions?.length) lines.push(`  Key interventions: ${ep.keyInterventions.join("; ")}`);
+    if (ep.remainingNeeds?.length) lines.push(`  Remaining needs: ${ep.remainingNeeds.join("; ")}`);
+    lines.push("");
+  });
+
+  // Visits
+  lines.push(SN_MAJOR);
+  lines.push("VISIT NOTES");
+  lines.push(SN_MAJOR);
+  (result.visits ?? []).forEach((v) => {
+    lines.push("");
+    lines.push(`VISIT #${v.visitNumber} — ${v.visitDate} — wk${v.weekOfEpisode} P${v.pdgmPeriod} — ${v.visitType}`);
+    lines.push(SN_MINOR);
+    lines.push(`Subjective: ${v.subjective}`);
+    lines.push(`Objective (${v.objective?.timestamp}):`);
+    const o = v.objective ?? ({} as any);
+    const vitals: string[] = [];
+    if (o.bp) vitals.push(`BP ${o.bp}`);
+    if (o.hr != null) vitals.push(`HR ${o.hr}`);
+    if (o.rr != null) vitals.push(`RR ${o.rr}`);
+    if (o.spo2 != null) vitals.push(`SpO2 ${o.spo2}%`);
+    if (o.temp != null) vitals.push(`T ${o.temp}°F`);
+    if (o.weight != null) vitals.push(`Wt ${o.weight}lb`);
+    if (o.fsbg != null) vitals.push(`FSBG ${o.fsbg}`);
+    if (o.painScore != null) vitals.push(`Pain ${o.painScore}/10`);
+    lines.push(`  ${vitals.join(" · ")}`);
+    if (o.lungSounds) lines.push(`  Lungs: ${o.lungSounds}`);
+    if (o.edema) lines.push(`  Edema: ${o.edema}`);
+    if (o.wound) {
+      lines.push(`  Wound (${o.wound.location}): ${o.wound.lengthCm}×${o.wound.widthCm}×${o.wound.depthCm}cm, ${o.wound.tissueType}, ${o.wound.drainage}, periwound ${o.wound.periwound}`);
+    }
+    if (o.ambulationDistanceFt != null) lines.push(`  Ambulation: ${o.ambulationDistanceFt} ft (${o.transferAssist ?? "n/a"})`);
+    lines.push(`Assessment: ${v.assessment}`);
+    lines.push(`Planned Interventions:`);
+    (v.plannedInterventions ?? []).forEach((p) => lines.push(`  • ${p}`));
+    lines.push(`Skilled Justification: ${v.skilledJustification}`);
+    lines.push(`Homebound (this visit): ${v.homeboundRestated}`);
+    if (v.educationDelivered?.length) {
+      lines.push(`Education delivered:`);
+      v.educationDelivered.forEach((e) => {
+        const t = result.educationTopics?.find((tt) => tt.id === e.topicId);
+        lines.push(`  • ${t?.topic ?? e.topicId} — ${e.comprehensionPct}%${e.masteryReached ? " (mastered)" : ""}`);
+        lines.push(`    ${e.response}`);
+      });
+    }
+    if (v.goalsProgress?.length) {
+      lines.push(`Goals progress:`);
+      v.goalsProgress.forEach((g) => lines.push(`  • [${g.status}] ${g.goalRef} — ${g.evidence}`));
+    }
+    if (v.coordinationOfCare) lines.push(`Coordination: ${v.coordinationOfCare}`);
+    lines.push(`Next visit focus: ${v.nextVisitFocus}`);
+    if (v.ggItemsTouched?.length) lines.push(`GG items: ${v.ggItemsTouched.join(", ")}`);
+    if (v.sources?.length) {
+      lines.push(`Sources:`);
+      v.sources.forEach((s) => lines.push(`  ${s.field} ← ${s.sourceDoc}`));
+    }
+    if (v.flags?.length) {
+      lines.push(`FLAGS:`);
+      v.flags.forEach((f) => lines.push(`  [${f.code}/${f.severity}] ${f.message}`));
+    }
+  });
+
+  // Audit
+  lines.push("");
+  lines.push(SN_MAJOR);
+  lines.push("LONGITUDINAL AUDIT");
+  lines.push(SN_MINOR);
+  lines.push(`Pass: ${result.longitudinalAudit?.pass ? "YES" : "NO"}`);
+  (result.longitudinalAudit?.failures ?? []).forEach((f, i) => {
+    lines.push(`  ${i + 1}. [${f.code}/${f.severity}] ${f.message} — visits ${f.offendingVisitIds?.join(", ")}`);
+  });
+
+  downloadTextFile(lines.join("\n"), buildSnFilename("SN_Visit_Series_Bundle", result));
+}
+
+export function generateSnSeriesEducationLogCsv(result: SnSeriesResult): void {
+  const rows: string[] = [];
+  rows.push(["topicId", "topic", "level", "firstTaught", "reinforcedCount", "masteredAt", "advancedTo"].join(","));
+  (result.educationLog ?? []).forEach((e) => {
+    rows.push(
+      [
+        csvCell(e.topicId),
+        csvCell(e.topic),
+        csvCell(e.level),
+        csvCell(e.firstTaught ?? ""),
+        String(e.reinforcedAt?.length ?? 0),
+        csvCell(e.masteredAt ?? ""),
+        csvCell(e.advancedToTopicId ?? ""),
+      ].join(","),
+    );
+  });
+  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, buildSnFilename("SN_Education_Log", result, "csv"));
+}
+
+export function generateSnSeriesPreClaimChecklist(result: SnSeriesResult): void {
+  const lines = snHeader("PRE-CLAIM / TPE / UPIC CHECKLIST", result);
+  const c = result.preClaimChecklist;
+  if (!c) {
+    lines.push("(checklist not generated)");
+  } else {
+    const mark = (v: boolean) => (v ? "[PASS]" : "[FAIL]");
+    lines.push(`${mark(c.f2fLinked)} F2F encounter linked`);
+    lines.push(`${mark(c.ordersOnFile)} Physician orders on file`);
+    lines.push(`${mark(c.oasisCongruent)} OASIS congruent with POC`);
+    lines.push(`${mark(c.measurableGoalsTied)} Measurable goals tied to documented interventions`);
+    lines.push(`${mark(c.homeboundJustifiedEachVisit)} Homebound justified each visit (specific drivers)`);
+    lines.push(`${mark(c.educationProgressionDocumented)} Education progression documented`);
+    lines.push(`${mark(c.noClonedObjectiveFindings)} No cloned objective findings`);
+    lines.push(`${mark(c.lupaAddressed)} LUPA addressed per PDGM period`);
+    lines.push(`${mark(c.billableDraftReady)} Billable draft ready`);
+    if (c.notes) {
+      lines.push("");
+      lines.push("Notes:");
+      lines.push(c.notes);
+    }
+  }
+  lines.push("");
+  lines.push("LONGITUDINAL AUDIT FAILURES");
+  lines.push(SN_MINOR);
+  const failures = result.longitudinalAudit?.failures ?? [];
+  if (failures.length === 0) {
+    lines.push("None.");
+  } else {
+    failures.forEach((f, i) => {
+      lines.push(`${i + 1}. [${f.code}/${f.severity}] ${f.message}`);
+      if (f.offendingVisitIds?.length) lines.push(`   Visits: ${f.offendingVisitIds.join(", ")}`);
+    });
+  }
+  downloadTextFile(lines.join("\n"), buildSnFilename("SN_PreClaim_Checklist", result));
+}
+
+export function generateSnSeriesAuditQAJSON(result: SnSeriesResult): void {
+  const payload = {
+    patientIdentifier: result.patientIdentifier,
+    certPeriod: result.certPeriod,
+    frequencyOrder: result.frequencyOrder,
+    generatedAt: result.generatedAt.toISOString(),
+    longitudinalAudit: result.longitudinalAudit,
+    preClaimChecklist: result.preClaimChecklist,
+    auditMeta: result.auditMeta ?? null,
+    episodeSummaries: result.episodeSummaries,
+    visitCount: result.visits?.length ?? 0,
+    educationLog: result.educationLog,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  downloadBlob(blob, buildSnFilename("SN_Audit_QA", result, "json"));
+}
+
+function csvCell(v: string): string {
+  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

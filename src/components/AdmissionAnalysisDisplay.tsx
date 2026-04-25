@@ -218,10 +218,6 @@ export default function AdmissionAnalysisDisplay({ result }: Props) {
               <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">DME / Supplies</p>
               <p>{result.planOfCare?.dmeSupplies}</p>
             </div>
-            <div>
-              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Discharge Planning</p>
-              <p className="whitespace-pre-wrap leading-relaxed">{result.planOfCare?.dischargePlanning}</p>
-            </div>
           </CardContent>
         </Card>
       </motion.div>
