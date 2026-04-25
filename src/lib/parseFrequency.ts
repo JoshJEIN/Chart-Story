@@ -121,3 +121,22 @@ export function lupaRiskFor(visitsCompleted: number, threshold: number | null) {
   }
   return { lupaRisk: "above" as const, lupaImpactNote: `Above LUPA threshold (${visitsCompleted} of ${threshold}). Full PDGM payment expected.` };
 }
+
+// Find the SN entry in a POC's disciplineOrders[] and return its frequencyDuration string,
+// plus a parsed FrequencyOrder for direct comparison.
+export function extractSnFrequencyFromPOC(
+  disciplineOrders: SocDisciplineOrder[] | undefined | null,
+): { raw: string; parsed: FrequencyOrder } | null {
+  if (!disciplineOrders || disciplineOrders.length === 0) return null;
+  const sn = disciplineOrders.find((d) => /^sn\b|skilled\s*nursing/i.test(d.discipline ?? ""));
+  if (!sn || !sn.frequencyDuration) return null;
+  const raw = sn.frequencyDuration.trim();
+  return { raw, parsed: parseFrequencyString(raw) };
+}
+
+// Compares two parsed frequency totals (POC vs user-typed). Used for the
+// front-end gating + the edge function's audit criterion (k).
+export function frequencyTotalsMatch(a: FrequencyOrder | null, b: FrequencyOrder | null): boolean {
+  if (!a || !b) return false;
+  return a.totalVisitsScheduled === b.totalVisitsScheduled && a.totalVisitsScheduled > 0;
+}
