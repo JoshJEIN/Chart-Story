@@ -81,23 +81,21 @@ export default function Index() {
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
     setMode(next);
+    const isDraft = next === "snQuickDraft" || next === "snRecertDraft";
     // Keep socResult when entering snSeries (it consumes it).
     // Keep documents when entering recertSeries (we just uploaded them).
     if (next !== "snSeries" && next !== "recertSeries") setDocuments([]);
     if (next === "snSeries" && documents.length > 0 && !socResult) {
-      // documents from a previous mode shouldn't leak into series-only mode
       setDocuments([]);
     }
     if (next === "recert" || next === "recertSeries") setSocResult(null);
     setRecertResult(null);
     if (next !== "snSeries") setSeriesResult(null);
     if (next !== "recertSeries") setRecertSeriesResult(null);
-    // When entering SN Series mode, pre-fill frequency from the POC if available.
+    if (!isDraft) setDraftResult(null);
     if (next === "snSeries" && socResult) {
       const fromPoc = extractSnFrequencyFromPOC(socResult.planOfCare?.disciplineOrders);
       if (fromPoc && fromPoc.parsed.totalVisitsScheduled > 0) {
-        // Prefer the canonical form so the input is always parseable, even
-        // when the POC stored a natural-language order ("BIW x 8 weeks").
         setFrequencyRaw(fromPoc.canonical || fromPoc.raw);
       }
     }
@@ -110,7 +108,8 @@ export default function Index() {
         mode === "recert" ? "pcr-analyze"
         : mode === "soc" ? "soc-analyze"
         : mode === "snSeries" ? "sn-series-analyze"
-        : "recert-series-analyze";
+        : mode === "recertSeries" ? "recert-series-analyze"
+        : "sn-visit-draft";
       const { data, error } = await supabase.functions.invoke(fnName, { body: { health: 1 } });
       if (error) throw error;
       const ok = data?.status === "ok";
@@ -131,6 +130,70 @@ export default function Index() {
       setIsCheckingHealth(false);
     }
   };
+
+  const runSnVisitDraft = async (draftMode: "quick" | "recertNarrative") => {
+    if (draftMode === "quick" && !draftSourceText.trim() && documents.length === 0) {
+      toast({
+        title: "Source notes required",
+        description: "Paste your scribbled vitals/notes or upload a document with the visit's source data.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!draftVisitDate) {
+      toast({ title: "Visit date required", variant: "destructive" });
+      return;
+    }
+    setIsAnalyzing(true);
+    setDraftResult(null);
+    try {
+      // If documents are uploaded, extract their text and prepend to the source excerpt.
+      let combinedSource = draftSourceText.trim();
+      if (documents.length > 0) {
+        const extracted = await extractTextFromDocuments(documents);
+        const docText = extracted
+          .filter((d) => d.ok)
+          .map((d) => `--- ${d.name} ---\n${d.text}`)
+          .join("\n\n");
+        combinedSource = [combinedSource, docText].filter(Boolean).join("\n\n");
+        const unreadable = extracted.filter((d) => !d.ok);
+        if (unreadable.length > 0) {
+          toast({
+            title: `${unreadable.length} file(s) could not be read`,
+            description: unreadable.map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`).join("\n"),
+            variant: "destructive",
+          });
+        }
+      }
+      // Pull patient context from in-memory SOC if available and field is empty.
+      const inferredContext = !draftPatientContext.trim() && socResult
+        ? `Primary Dx: ${socResult.planOfCare?.primaryDx ?? ""}\nSecondary Dx: ${(socResult.planOfCare?.secondaryDx ?? []).join(", ")}\nGoals: ${(socResult.planOfCare?.measurableGoals ?? []).join("; ")}`
+        : draftPatientContext.trim();
+
+      const result = await analyzeSnVisitDraft({
+        mode: draftMode,
+        visitDate: draftVisitDate,
+        visitNumber: draftVisitNumber ? parseInt(draftVisitNumber, 10) : undefined,
+        weekOfEpisode: draftWeekOfEpisode ? parseInt(draftWeekOfEpisode, 10) : undefined,
+        patientContext: inferredContext,
+        sourceExcerpt: combinedSource,
+        teachingFocus: draftTeachingFocus.trim() || undefined,
+        patientIdentifier: draftPatientId.trim() || socResult?.patientIdentifier,
+        patientFullName: draftPatientName.trim() || socResult?.patientFullName,
+      });
+      setDraftResult(result);
+      toast({ title: "Draft generated", description: `${result.addedFields?.length ?? 0} field(s) expanded by AI — review before billing.` });
+    } catch (err: any) {
+      toast({
+        title: "Draft generation failed",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
 
   const runSnSeries = async () => {
     if (!socResult) {
