@@ -286,6 +286,8 @@ function buildUserMessage(
   frequencyOrder: any,
   period1Threshold: number | null,
   period2Threshold: number | null,
+  expectedFrequencyFromPOC: string | null,
+  verbalOrder: { date: string; orderingMd: string; content: string } | null,
 ): string {
   // Trim SOC payload to keep token budget reasonable.
   const socSummary = {
@@ -299,6 +301,19 @@ function buildUserMessage(
     medicationReconciliation: socResult.medicationReconciliation,
   };
 
+  const freqMatch =
+    expectedFrequencyFromPOC && expectedFrequencyFromPOC.trim() === (frequencyOrder?.raw ?? "").trim();
+
+  const freqBlock = expectedFrequencyFromPOC
+    ? `\nPHYSICIAN-ORDERED FREQUENCY (from 485 POC): ${expectedFrequencyFromPOC}\nUSER-SUPPLIED FREQUENCY: ${frequencyOrder?.raw}\nFREQUENCY MATCHES POC: ${freqMatch ? "YES" : "NO"}\n${
+        !freqMatch && verbalOrder
+          ? `VERBAL ORDER ON FILE — date=${verbalOrder.date}, MD=${verbalOrder.orderingMd}, content="${verbalOrder.content}". You MUST cite this verbal order in visit #1 coordinationOfCare and in preClaimChecklist.notes.`
+          : !freqMatch
+          ? `NO VERBAL ORDER PROVIDED. This is an audit failure (FREQ_POC_MISMATCH).`
+          : `Frequency matches physician orders.`
+      }\n`
+    : "\n(No POC frequency was provided for cross-check.)\n";
+
   return `Generate the complete SN visit series for the 60-day certification period below.
 
 CERT PERIOD: ${certPeriod?.startDate} → ${certPeriod?.endDate} (60 days)
@@ -306,7 +321,7 @@ FREQUENCY ORDER (raw): ${frequencyOrder?.raw}
 TOTAL SN VISITS SCHEDULED: ${frequencyOrder?.totalVisitsScheduled}
 LUPA THRESHOLD — PERIOD 1 (days 1–30): ${period1Threshold ?? "unknown"}
 LUPA THRESHOLD — PERIOD 2 (days 31–60): ${period2Threshold ?? "unknown"}
-
+${freqBlock}
 PRE-COMPUTED VISIT SCHEDULE (visitNumber, visitDate, weekOfEpisode, pdgmPeriod) — use exactly these dates:
 ${visitSlots.map((v) => `  #${v.visitNumber}  ${v.visitDate}  wk${v.weekOfEpisode}  P${v.pdgmPeriod}`).join("\n")}
 
