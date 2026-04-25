@@ -46,10 +46,16 @@ export function normalizeFrequencyString(raw: string): string {
       lower.match(/(\d+)\s*(?:week|wk)s?\b/);
     const weeks = weeksMatch ? parseInt(weeksMatch[1], 10) : NaN;
 
+    // Strip the duration phrase so the visits-per-week search can't pick up
+    // the "8" from "x 8 weeks". Also strip standalone "N weeks".
+    const vpwSearch = lower
+      .replace(/(?:x|for|times)\s*\d+\s*(?:week|wk)s?/g, " ")
+      .replace(/\b\d+\s*(?:week|wk)s?\b/g, " ");
+
     // Find visits per week.
     let vpw: number = NaN;
     // Numeric: "2 visits/week", "2v/wk", "3 times per week", "3x/wk"
-    const numericVpw = lower.match(
+    const numericVpw = vpwSearch.match(
       /(\d+)\s*(?:v(?:isits?)?|times?|x)?\s*(?:\/|per|a)?\s*(?:wk|week)/,
     );
     if (numericVpw) vpw = parseInt(numericVpw[1], 10);
@@ -57,7 +63,7 @@ export function normalizeFrequencyString(raw: string): string {
     if (!Number.isFinite(vpw)) {
       for (const [word, n] of Object.entries(VPW_WORDS)) {
         const re = new RegExp(`\\b${word.replace(/-/g, "[\\s-]?")}\\b`, "i");
-        if (re.test(lower)) { vpw = n; break; }
+        if (re.test(vpwSearch)) { vpw = n; break; }
       }
     }
 
