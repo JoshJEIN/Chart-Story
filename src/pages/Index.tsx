@@ -32,6 +32,8 @@ export default function Index() {
   const [recertResult, setRecertResult] = useState<AnalysisResult | null>(null);
   const [socResult, setSocResult] = useState<SocAnalysisResult | null>(null);
   const [seriesResult, setSeriesResult] = useState<SnSeriesResult | null>(null);
+  const [recertSeriesResult, setRecertSeriesResult] = useState<RecertSeriesResult | null>(null);
+  const [pastedPriorSeriesJson, setPastedPriorSeriesJson] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [maxIterations, setMaxIterations] = useState<number>(3);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
