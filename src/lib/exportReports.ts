@@ -1,4 +1,5 @@
 import { AnalysisResult } from "@/types/pcr";
+import { SocAnalysisResult } from "@/types/soc";
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   new: "New",
