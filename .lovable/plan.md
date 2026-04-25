@@ -1,145 +1,85 @@
+
 ## Goal
 
-Two related changes that share the same architecture:
+Solve the real-world problem that nurses often write extremely short notes (vitals + a couple of phrases) by giving them two new SN-note draft generators that turn whatever they DID document into an audit-defensible, narrative-rich SN visit note — without inventing vitals when none were taken.
 
-1. **Bind the SN Visit Series to the physician-ordered frequency on the 485** so the app cannot silently drift from what the POC actually orders.
-2. **Add a fourth mode — "Recert Visit Series"** — that generates SN visit notes for a *subsequent* 60-day cert period using freshly uploaded recertification documents (Recert OASIS, updated 485/POC, latest physician orders, current med profile, specialist notes, labs, recent SOAP/SN notes). Education topics advance from where the prior period left off — no repeats of mastered content.
+## Two new modes (additions, not replacements)
 
----
+### Mode A — "Quick SN Visit Draft (from scribbled notes / vitals)"
+For the day-to-day case: a nurse uploads a scanned scribble, a typed vitals sheet, or a short text snippet from one visit. The app produces ONE polished, billable SN visit note.
 
-## Part 1 — POC-ordered frequency becomes the source of truth
+Inputs:
+- Patient context: optional — either an existing SOC result in memory, or a small "Patient context" textarea (Dx, current meds, key goals).
+- Visit date.
+- Document upload (image, PDF, text) of the nurse's scribbles / vitals / quick notes — parsed via existing `extractTextFromDocuments` (and image-OCR through Lovable AI for handwriting).
+- Visit number / week-of-episode (optional, used for context only).
 
-### Behavior
+Output: ONE `SnVisit`-shaped draft with:
+- objective.* populated ONLY from what the source actually contains; missing fields are flagged `MISSING_SOURCE` rather than fabricated.
+- assessment, plannedInterventions, skilledJustification, educationDelivered, coordinationOfCare, goalsProgress, nextVisitFocus, homeboundRestated — all expanded into proper narrative based on the scribbles + patient context.
+- sources[] cites the uploaded scribble doc.
+- A "What was added vs. what came from your notes" diff panel so the nurse can verify nothing was invented.
 
-- When the user opens **SN Visit Series** mode, the app reads `socResult.planOfCare.disciplineOrders` and finds the SN entry. Its `frequencyDuration` (e.g., `"2w8"`, `"2w3, 1w6, 1w4"`) becomes the **default** value of the frequency input.
-- A read-only chip shows the **POC-ordered frequency** next to the input with a "Use POC frequency" button.
-- If the user types something different, a yellow warning chip appears: *"Differs from physician orders — verbal order required."*
-- A new optional field, **Verbal Order Reference** (date + ordering MD), unlocks override. Without it, the Generate button is disabled when the typed frequency's total visits ≠ the POC's parsed total.
-- The verbal order, if provided, is passed to the edge function and recorded in every visit note's `coordinationOfCare` and in `preClaimChecklist.notes`.
+### Mode B — "Recert-Period SN Visit Draft (narrative-heavy, no vitals)"
+For nurses doing the recert OASIS visit who want a narrative template that emphasizes teaching depth and clinical reasoning, with vitals deliberately omitted (they live in the OASIS).
 
-### Edge function changes (`sn-series-analyze`)
+Inputs:
+- Recert packet upload (or reuse the current Recert Visit Series upload).
+- Pick one specific visit slot (or "free-form, no specific date").
+- Optional teaching focus (e.g. "new metformin + low-Na diet"); otherwise inferred from packet.
 
-- Accept new fields: `expectedFrequencyFromPOC` (string), `verbalOrder` (`{date, orderingMd, content} | null`).
-- Add audit criterion **(k)**: `frequencyOrder.raw` must match `expectedFrequencyFromPOC` **OR** `verbalOrder` must be present. Failure code `FREQ_POC_MISMATCH` (severity high) blocks `longitudinalAudit.pass`.
-- When `verbalOrder` is present, the system prompt instructs the model to cite it in `preClaimChecklist.notes` and in the first visit's `coordinationOfCare`.
+Output: ONE narrative-heavy SN visit note with:
+- subjective + assessment expanded.
+- plannedInterventions detailed and tied to specific Dx/meds.
+- educationDelivered expanded for each topic with: what the topic is, WHY it matters to THIS patient's diagnosis/meds/safety, the diet / lifestyle / safety changes, teach-back questions used and the patient's actual-vs-target response, comprehension %, mastery flag.
+- coordinationOfCare (MD calls, referrals, pharmacy, social work).
+- nextVisitFocus.
+- homeboundRestated.
+- objective block intentionally suppressed (UI hides it; field present but empty / marked "see OASIS").
 
-### Files touched (Part 1)
+## UI changes (`src/pages/Index.tsx`)
 
-- `src/lib/parseFrequency.ts` — add `extractSnFrequencyFromPOC(disciplineOrders)` helper that finds the SN order and parses it.
-- `src/pages/Index.tsx` — pre-fill `frequencyRaw` from `socResult` on mode switch; render POC chip + warning + verbal-order field; gate the Generate button.
-- `src/lib/analyzeSnSeries.ts` — forward `expectedFrequencyFromPOC` and `verbalOrder` to the edge function.
-- `supabase/functions/sn-series-analyze/index.ts` — accept the new fields, inject into system prompt, add audit criterion (k).
-- `src/types/snSeries.ts` — add `verbalOrder` field on `SnSeriesResult` and the new audit code.
+- Extend `AnalysisMode` to: `"recert" | "soc" | "snSeries" | "recertSeries" | "snQuickDraft" | "snRecertDraft"`.
+- Add two new `ModeCard`s in the Analysis Mode grid (grid becomes 3 cols on lg, or wraps).
+- Build small input panels for each new mode (visit date, patient context textarea, single-document uploader, optional teaching focus).
+- Render new `SnSingleVisitDisplay` component for the single-visit output (reuses styling from `SnVisitSeriesDisplay`, but for one visit + a "from your notes vs. expanded by AI" diff section).
 
----
+## Backend (one new edge function)
 
-## Part 2 — Recert Visit Series (subsequent 60-day periods)
+Create `supabase/functions/sn-visit-draft/index.ts` with two handler paths driven by a `mode` field in the body:
+- `mode: "quick"` — Quick draft from scribbles. System prompt enforces: never fabricate vitals; flag MISSING_SOURCE for anything not in the source; expand narrative around what IS there.
+- `mode: "recertNarrative"` — Narrative-heavy recert visit. System prompt suppresses objective vitals, demands rich education explanations (topic, why-it-matters-to-this-pt, diet/lifestyle/med-safety changes, teach-back Q+A, comprehension, mastery), required coordinationOfCare and nextVisitFocus.
 
-### Why a separate mode (vs. reusing SN Visit Series)
+Both:
+- Use Lovable AI Gateway with `google/gemini-2.5-pro`, tool-calling for structured `SnVisit` output (no number `enum`s — same fix as before).
+- Standard CORS + health-check pattern from existing functions.
+- Echo back `inputExcerpt` (what we extracted from the source) so the UI can render the diff.
+- Return `{ visit: SnVisit, inputExcerpt: string, addedFields: string[] }`.
 
-The SOC mode is admission-specific: it builds a 485 from intake docs and seeds *first-time* education topics. A recertification cycle uses a **Recert OASIS**, an **updated POC**, fresh **physician orders**, and — critically — must **continue** education from the prior episode without re-teaching mastered topics. Different inputs, different audit posture, different output framing. It earns its own mode.
+## New client lib + types
 
-### Flow
+- `src/lib/analyzeSnVisitDraft.ts` — wraps `supabase.functions.invoke("sn-visit-draft", ...)` for both submodes.
+- `src/types/snVisitDraft.ts` — `SnSingleVisitDraft` = `{ visit: SnVisit; inputExcerpt: string; addedFields: string[]; mode: "quick" | "recertNarrative" }`.
+- `src/components/SnSingleVisitDisplay.tsx` — renders a single visit using the same visual language as `SnVisitSeriesDisplay`, plus a collapsible "Source vs. Expanded" panel; hides the vitals block when `mode === "recertNarrative"`.
 
-```text
-[Recert Mode]
-   │
-   ▼
-1. Upload Recert packet (Recert OASIS, updated 485/POC, latest MD orders,
-   current med profile, specialist notes, labs, recent SN/SOAP notes)
-   │
-   ▼
-2. (Optional) Attach prior SN Series result — JSON paste OR auto-pickup
-   from the in-memory result if user just finished one.
-   │
-   ▼
-3. Edge function `recert-series-analyze`:
-   a. Parses Recert OASIS + updated POC → produces a refreshed
-      `planOfCare` (same shape as SOC POC, no discharge planning)
-   b. Reconciles education topics:
-        • Drops mastered topics
-        • Carries forward in-progress topics
-        • Adds new topics for new dx / new meds / new orders
-   c. Generates the full 60-day SN visit series for the new cert
-      period using the same audit loop as `sn-series-analyze`
-   │
-   ▼
-4. Display results (reuses SnVisitSeriesDisplay) + export
-```
+## Anti-fabrication safeguards (Quick mode)
 
-### Education continuity logic
+- AI prompt: "If a vital sign is not present in the source excerpt, leave the field empty and add `flags: [{code: 'MISSING_SOURCE', severity: 'medium', message: '<field> not documented in source'}]`. Never invent BP/HR/SpO2/weight/FSBG/pain."
+- Client-side post-check: any objective field populated that does not appear (numerically, with tolerance) in `inputExcerpt` is auto-listed in `addedFields` and surfaced in the diff panel for the nurse to confirm or strike.
 
-- New helper `reconcileEducationTopics(prior, newSocSeed)`:
-  - **Drop** any topic where `priorEducationLog[topicId].masteredAt != null`.
-  - **Carry forward** topics that are in-progress (`firstTaught != null && masteredAt == null`) at their current level.
-  - **Add** topics seeded from new dx/meds/orders not present in prior list.
-  - Pass the reconciled list + a `priorEducationLog` snapshot to the edge function so it does not re-teach mastered content.
+## Files
 
-### Recert-specific audit additions
+New:
+- `supabase/functions/sn-visit-draft/index.ts`
+- `src/lib/analyzeSnVisitDraft.ts`
+- `src/types/snVisitDraft.ts`
+- `src/components/SnSingleVisitDisplay.tsx`
 
-- `RECERT_MASTERED_TOPIC_RETAUGHT` — high severity if any visit teaches a topic flagged mastered in the prior log.
-- `RECERT_NEW_DX_NOT_ADDRESSED` — medium if a dx present in updated POC but absent in prior POC has zero teaching/intervention.
-- `RECERT_NO_FREQ_CHANGE_RATIONALE` — medium if frequency order differs from prior period and no rationale appears in `coordinationOfCare` of visit #1.
+Modified:
+- `src/pages/Index.tsx` (mode union, two ModeCards, two input panels, two run handlers, render `SnSingleVisitDisplay`)
+- `src/lib/parseDocuments.ts` (only if image OCR for scanned scribbles isn't already handled — verify first; otherwise no change)
 
-### Files added (Part 2)
+## Out of scope
 
-- `supabase/functions/recert-series-analyze/index.ts` — new edge function. Same security/CORS/health-probe pattern. System prompt extends the SN-series prompt with the recert-specific rules.
-- `src/lib/analyzeRecertSeries.ts` — client wrapper, mirrors `analyzeSnSeries.ts`.
-- `src/lib/reconcileEducation.ts` — pure helper for topic carry-forward.
-- `src/types/recertSeries.ts` — `RecertSeriesResult` extends `SnSeriesResult` with `priorEpisodeRef`, `educationCarriedForward[]`, `educationDropped[]`, `newDxAddressed[]`.
-
-### Files modified (Part 2)
-
-- `src/pages/Index.tsx` — fourth mode card "Recert Visit Series". New uploader helper text listing the recert packet docs. Optional "Paste prior series JSON" textarea OR auto-detect if `seriesResult` already in state. SOC start date input becomes "Recert episode start date".
-- `src/components/SnVisitSeriesDisplay.tsx` — small additions to surface "Education carried forward / dropped / new" panel when present.
-- `src/lib/exportReports.ts` — recert-mode export adds the carry-forward summary.
-
----
-
-## UX summary
-
-**Mode toggle (4 cards):**
-
-```text
-[ Recertification (PCR) ]   [ Admission / SOC ]
-[ SN Visit Series (60d) ]   [ Recert Visit Series (subsequent 60d) ]
-```
-
-**SN Visit Series mode header now shows:**
-
-```text
-POC frequency (from 485):  2w8                    [Use POC frequency]
-Your frequency:            [ 2w8                ]
-✓ Matches physician orders
-```
-
-or, on mismatch:
-
-```text
-POC frequency (from 485):  2w8
-Your frequency:            [ 2w3, 1w6, 1w4     ]
-⚠ Differs from physician orders — enter verbal order to proceed
-Verbal order:  Date [____]  Ordering MD [____________]  Content [______________]
-```
-
-**Recert Visit Series mode adds:**
-
-- Upload section labeled *"Upload Recertification Packet"* with the doc list from your message.
-- Collapsible *"Prior episode (optional but recommended)"* — auto-filled if a series was just generated, or accepts pasted JSON.
-
----
-
-## Out of scope / explicitly NOT changing
-
-- No discharge planning anywhere (already removed; staying out).
-- No persistence layer yet — prior-episode handoff is in-memory or paste-JSON. A persistence layer (so prior episodes survive a refresh) is the obvious next step but not included here unless you ask.
-- No multi-discipline scheduling (PT/OT/ST). Series remains SN-only; other disciplines are still surfaced in the POC display.
-
----
-
-## Deliverable order
-
-1. Part 1 (POC frequency binding) — small, high-value, fully isolated.
-2. Part 2 (Recert Visit Series mode) — new edge function + new mode + education reconciliation.
-3. Health-check button auto-routes to the new function when the mode is active.
-4. Verify with a dry-run health probe on the new function after deploy.
+- No changes to existing recert / SOC / SN Series / Recert Series modes — they keep working exactly as today.
+- No DB schema changes; output is in-memory only (consistent with current modes).
