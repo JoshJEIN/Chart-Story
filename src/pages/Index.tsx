@@ -407,14 +407,38 @@ export default function Index() {
                 <CalendarRange className="h-5 w-5 text-accent" />
                 <h2 className="text-base font-semibold">Series Inputs</h2>
               </div>
-              {!socResult && (
+              {isSeries && !socResult && (
                 <p className="text-sm text-flag">
-                  No SOC result loaded. Switch to “Admission / Start-of-Care”, run analysis, then return to this mode.
+                  No SOC result loaded. Switch to "Admission / Start-of-Care", run analysis, then return to this mode.
                 </p>
+              )}
+              {isRecertSeries && (
+                <div>
+                  <Label className="text-xs">Prior episode (optional)</Label>
+                  {seriesResult ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ✓ Using in-memory prior SN series ({seriesResult.visits?.length ?? 0} visits, education log of {seriesResult.educationLog?.length ?? 0} topics).
+                    </p>
+                  ) : (
+                    <>
+                      <textarea
+                        value={pastedPriorSeriesJson}
+                        onChange={(e) => setPastedPriorSeriesJson(e.target.value)}
+                        disabled={isAnalyzing}
+                        rows={3}
+                        placeholder="Optional: paste the JSON of the prior 60-day SN series for education continuity. Leave blank to start fresh."
+                        className="mt-1 w-full rounded-md border border-border bg-background p-2 text-xs font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Without prior context, education topics are seeded fresh from the recert packet.
+                      </p>
+                    </>
+                  )}
+                </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs">SOC Start Date</Label>
+                  <Label className="text-xs">{isRecertSeries ? "Recert Episode Start Date" : "SOC Start Date"}</Label>
                   <Input
                     type="date"
                     value={socStartDate}
