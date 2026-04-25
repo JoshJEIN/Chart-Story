@@ -344,6 +344,14 @@ export default function Index() {
       void runRecertSeries();
       return;
     }
+    if (mode === "snQuickDraft") {
+      void runSnVisitDraft("quick");
+      return;
+    }
+    if (mode === "snRecertDraft") {
+      void runSnVisitDraft("recertNarrative");
+      return;
+    }
     if (documents.length === 0) {
       toast({
         title: "No documents uploaded",
@@ -401,19 +409,33 @@ export default function Index() {
   const isSoc = mode === "soc";
   const isSeries = mode === "snSeries";
   const isRecertSeries = mode === "recertSeries";
-  const isUploadMode = !isSeries; // recertSeries also uploads documents
+  const isQuickDraft = mode === "snQuickDraft";
+  const isRecertDraft = mode === "snRecertDraft";
+  const isDraft = isQuickDraft || isRecertDraft;
+  // Upload section is shown for everything except snSeries (which consumes SOC) and snRecertDraft (uses paste/context).
+  // snQuickDraft and snRecertDraft both allow optional document upload alongside the textarea.
+  const isUploadMode = !isSeries;
   const uploaderHelper = isSoc
     ? "Upload the admission packet for the new Start-of-Care episode — physician orders, OASIS SOC, 485 / Plan of Care, Face-to-Face encounter, hospital H&P or discharge summary, doctor / specialist notes, and medication list."
     : isRecertSeries
     ? "Upload the RECERTIFICATION packet for the next 60-day cert period — Recert OASIS, updated 485 / Plan of Care, most recent physician orders, current medication profile, specialist visits, lab work, and recent SN / SOAP notes."
+    : isQuickDraft
+    ? "Optional: upload a typed vitals sheet, lab printout, or text-based PDF for this single visit. You can also just paste the source text below."
+    : isRecertDraft
+    ? "Optional: upload the recert OASIS / updated POC / med list as supporting context. The narrative is built primarily from the patient context and teaching focus you provide."
     : "Upload all documents for the current recertification episode — OASIS, Plan of Care, F2F, physician orders, SN visit notes, SOAP notes, labs, medication lists, and any other supporting records.";
   const analyzeButtonLabel = isSeries
     ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} SN Visit Notes (60-day cert)`
     : isRecertSeries
     ? `Generate ${parseFrequencyString(frequencyRaw).totalVisitsScheduled || "—"} Recert SN Visit Notes (next 60 days)`
+    : isQuickDraft
+    ? "Expand My Notes Into a Billable SN Visit"
+    : isRecertDraft
+    ? "Generate Narrative Recert SN Visit Note"
     : isSoc
     ? "Run Admission / SOC Care-Plan Analysis"
     : "Run PCR Recertification Analysis";
+
 
   return (
     <div className="min-h-screen bg-background">
