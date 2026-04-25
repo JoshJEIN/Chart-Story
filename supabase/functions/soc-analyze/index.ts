@@ -13,7 +13,7 @@ const SYSTEM_PROMPT = `You are a Medicare home health Start-of-Care (SOC) / Admi
 
 Your job is to produce a forward-looking, Medicare-compliant care plan for THIS admission episode. You are NOT performing a recertification review. You are establishing:
 1. The admission clinical picture and baseline.
-2. A 485-aligned Plan of Care: diagnoses, homebound justification, skilled need rationale, measurable timed goals, discipline orders with frequency/duration, DME/supplies, and discharge criteria.
+2. A 485-aligned Plan of Care: diagnoses, homebound justification, skilled need rationale, measurable timed goals, discipline orders with frequency/duration, and DME/supplies. (Discharge planning is OUT OF SCOPE for this SOC deliverable — it is documented at discharge OASIS, not at admission.)
 3. A first Skilled Nursing visit note template (SOAP-style) ready for the clinician to edit and sign for the first scheduled visit.
 4. A Patient/Caregiver Education Plan with full teach-back narratives — never one-line topics.
 
