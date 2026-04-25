@@ -166,9 +166,99 @@ export default function Index() {
     }
   };
 
+  const runRecertSeries = async () => {
+    if (documents.length === 0) {
+      toast({
+        title: "Upload the recertification packet first",
+        description: "Recert OASIS, updated 485/POC, latest physician orders, current med profile, specialist notes, labs, and recent SN/SOAP notes.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const freq = parseFrequencyString(frequencyRaw);
+    if (freq.totalVisitsScheduled === 0) {
+      toast({
+        title: "Frequency string could not be parsed",
+        description: 'Use formats like "2w8" or "2w3, 1w6, 1w4".',
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Resolve prior series: in-memory first, then pasted JSON.
+    let priorSeries: SnSeriesResult | null = seriesResult;
+    if (!priorSeries && pastedPriorSeriesJson.trim()) {
+      try {
+        priorSeries = JSON.parse(pastedPriorSeriesJson) as SnSeriesResult;
+      } catch {
+        toast({
+          title: "Prior series JSON is invalid",
+          description: "Paste the JSON exported from a previous SN Visit Series, or leave blank to start fresh.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    const certPeriod = buildCertPeriod(socStartDate);
+    setIsAnalyzing(true);
+    setRecertSeriesResult(null);
+
+    try {
+      const extracted = await extractTextFromDocuments(documents);
+      const unreadable = extracted.filter((d) => !d.ok);
+      if (unreadable.length === extracted.length) {
+        throw new Error(
+          `None of the uploaded files produced extractable text. ${
+            unreadable[0]?.note ?? "Re-upload as text-based PDF, DOCX, TXT, or CSV."
+          }`,
+        );
+      }
+      if (unreadable.length > 0) {
+        toast({
+          title: `${unreadable.length} file(s) could not be read`,
+          description: unreadable.map((d) => `• ${d.name}: ${d.note ?? "no extractable text"}`).join("\n"),
+          variant: "destructive",
+        });
+      }
+      const readable = extracted
+        .filter((d) => d.ok)
+        .map((d) => ({ name: d.name, text: d.text ?? "" }));
+
+      const result = await analyzeRecertVisitSeries(readable, certPeriod, freq, {
+        maxIterations,
+        lupaThresholds: {
+          period1: lupaPeriod1 ? parseInt(lupaPeriod1, 10) : null,
+          period2: lupaPeriod2 ? parseInt(lupaPeriod2, 10) : null,
+        },
+        verbalOrder: verbalOrderProvided
+          ? { date: verbalOrderDate, orderingMd: verbalOrderMd.trim(), content: verbalOrderContent.trim() }
+          : null,
+        priorSeries,
+      });
+      setRecertSeriesResult(result);
+      toast({
+        title: "Recert visit series generated",
+        description: `${result.visits?.length ?? 0} visit notes • ${result.educationDropped?.length ?? 0} mastered topic(s) dropped • ${result.educationCarriedForward?.length ?? 0} carried forward.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Recert series generation failed",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (mode === "snSeries") {
       void runSnSeries();
+      return;
+    }
+    if (mode === "recertSeries") {
+      void runRecertSeries();
       return;
     }
     if (documents.length === 0) {
