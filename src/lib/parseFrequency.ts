@@ -2,6 +2,7 @@
 // Accepts: "2w3", "2w3,1w6,1w4", "SN: 2w3,1w6,1w4 / PT: 1w4"
 // Returns parsed blocks and a Mon/Wed/Fri (or weekly) schedule across the 60-day cert period.
 import type { FrequencyBlock, FrequencyOrder, CertPeriod } from "@/types/snSeries";
+import type { SocDisciplineOrder } from "@/types/soc";
 
 const BLOCK_RE = /(\d+)\s*[wW]\s*(\d+)/g;
 const DISCIPLINE_RE = /^(SN|PT|OT|ST|MSW|HHA)\s*:/i;
