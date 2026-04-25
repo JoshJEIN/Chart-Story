@@ -552,7 +552,7 @@ function buildToolDefinition() {
             items: {
               type: "object",
               properties: {
-                period: { type: "number", enum: [1, 2] },
+                period: { type: "number" },
                 visitsCompleted: { type: "number" },
                 visitsScheduled: { type: "number" },
                 lupaThreshold: { type: "number" },
