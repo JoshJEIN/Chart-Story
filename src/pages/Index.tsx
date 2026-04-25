@@ -87,7 +87,10 @@ export default function Index() {
     setIsCheckingHealth(true);
     try {
       const fnName =
-        mode === "recert" ? "pcr-analyze" : mode === "soc" ? "soc-analyze" : "sn-series-analyze";
+        mode === "recert" ? "pcr-analyze"
+        : mode === "soc" ? "soc-analyze"
+        : mode === "snSeries" ? "sn-series-analyze"
+        : "recert-series-analyze";
       const { data, error } = await supabase.functions.invoke(fnName, { body: { health: 1 } });
       if (error) throw error;
       const ok = data?.status === "ok";
