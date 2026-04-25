@@ -225,7 +225,7 @@ function ObjectiveBlock({ objective }: { objective: any }) {
     ["Lung sounds", objective.lungSounds],
     ["Ambulation", objective.ambulationDistanceFt ? `${objective.ambulationDistanceFt} ft` : undefined],
     ["Transfer", objective.transferAssist],
-  ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+  ].filter((row): row is [string, any] => row[1] !== undefined && row[1] !== null && row[1] !== "");
   if (rows.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-flag/40 bg-flag/5 p-3 text-xs text-flag">
