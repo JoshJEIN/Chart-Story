@@ -180,9 +180,9 @@ export const handler = async (req: Request): Promise<Response> => {
       { role: "user", content: userMessage },
     ];
 
-    const requested = typeof maxIterations === "number" ? Math.floor(maxIterations) : 3;
+    const requested = typeof maxIterations === "number" ? Math.floor(maxIterations) : 1;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requested));
-    const MAX_OUTPUT_TOKENS = 32768;
+    const MAX_OUTPUT_TOKENS = 16384;
     let analysisResult: any = null;
     let lastFailures: any[] = [];
     let iterationsRun = 0;
