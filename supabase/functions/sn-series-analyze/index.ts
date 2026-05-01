@@ -153,16 +153,11 @@ export const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-    const AI_GATEWAY_URL =
-      Deno.env.get("AI_GATEWAY_URL") ?? "https://ai.gateway.lovable.dev/v1/chat/completions";
-
     const visitSlots = schedule as VisitSlot[];
     const period1Threshold = lupaThresholds?.period1 ?? null;
     const period2Threshold = lupaThresholds?.period2 ?? null;
 
-    const userMessage = buildUserMessage(
+    const analysisResult = buildDeterministicSnSeries(
       socResult,
       visitSlots,
       certPeriod,
@@ -173,128 +168,13 @@ export const handler = async (req: Request): Promise<Response> => {
       verbalOrder ?? null,
     );
 
-    const toolDefinition = buildToolDefinition();
-
-    const messages: Array<{ role: string; content: string }> = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userMessage },
-    ];
-
-    const requested = typeof maxIterations === "number" ? Math.floor(maxIterations) : 1;
-    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requested));
-    const MAX_OUTPUT_TOKENS = 16384;
-    let analysisResult: any = null;
-    let lastFailures: any[] = [];
-    let iterationsRun = 0;
-
-    for (let iteration = 1; iteration <= MAX_AUDIT_ITERATIONS; iteration++) {
-      iterationsRun = iteration;
-      console.log(`sn-series-analyze: iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
-
-      const response = await fetch(AI_GATEWAY_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages,
-          tools: [toolDefinition],
-          tool_choice: { type: "function", function: { name: "sn_visit_series" } },
-          temperature: 0.2,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          parallel_tool_calls: false,
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          return new Response(
-            JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        if (response.status === 402) {
-          return new Response(
-            JSON.stringify({ error: "AI credits exhausted. Add funds in Settings > Workspace > Usage." }),
-            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        const errText = await response.text();
-        console.error("AI gateway error:", response.status, errText);
-        return new Response(
-          JSON.stringify({ error: "AI analysis failed" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-
-      const data = await response.json();
-      const parsed = parseStructuredAnalysis(data, "sn_visit_series");
-      if (!parsed) {
-        const finishReason = getFinishReason(data);
-        console.error("sn-series-analyze: missing structured tool call", {
-          finishReason,
-          hasAssistantContent: Boolean(getAssistantContent(data)),
-        });
-
-        if (iteration < MAX_AUDIT_ITERATIONS) {
-          messages.push({
-            role: "assistant",
-            content: "Prior response did not call the required sn_visit_series tool.",
-          });
-          messages.push({
-            role: "user",
-            content:
-              "Retry now. You MUST call the sn_visit_series tool exactly once. Do not answer in prose. Keep each narrative clinically specific but concise enough to fit the tool response.",
-          });
-          continue;
-        }
-
-        const tokenLimitHit = ["length", "MAX_TOKENS", "max_tokens"].includes(String(finishReason ?? ""));
-        return new Response(
-          JSON.stringify({
-            error: tokenLimitHit
-              ? "AI response was too large to structure. Try a shorter frequency range or fewer visits."
-              : "AI did not return structured analysis",
-          }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-
-      analysisResult = parsed;
-      lastFailures = analysisResult.longitudinalAudit?.failures ?? [];
-
-      console.log(
-        `sn-series-analyze: iteration ${iteration} → pass=${analysisResult.longitudinalAudit?.pass}, failures=${lastFailures.length}`,
-      );
-
-      if (analysisResult.longitudinalAudit?.pass === true && lastFailures.length === 0) break;
-
-      if (iteration < MAX_AUDIT_ITERATIONS) {
-        const summary =
-          lastFailures.length > 0
-            ? lastFailures
-                .map((f: any) => `  - [${f.code}/${f.severity}] ${f.message} (visits: ${(f.offendingVisitIds || []).join(", ")})`)
-                .join("\n")
-            : "  - longitudinalAudit.pass was not true; identify and fix all failing criteria.";
-        messages.push({ role: "assistant", content: `Prior draft (iteration ${iteration}) failed longitudinal audit.` });
-        messages.push({
-          role: "user",
-          content:
-            `Revise to pass all longitudinal audit criteria. Failures:\n${summary}\n\nPreserve correct content; rewrite only the offending visits/sections. Return only when longitudinalAudit.pass == true.`,
-        });
-      }
-    }
-
-    if (analysisResult) {
-      analysisResult._auditMeta = {
-        iterations: iterationsRun,
-        maxIterations: MAX_AUDIT_ITERATIONS,
-        finalAuditPass: analysisResult.longitudinalAudit?.pass === true && lastFailures.length === 0,
-        remainingFailures: lastFailures.map((f: any) => ({ criterion: f.code, reason: f.message })),
-      };
-    }
+    const failures = analysisResult.longitudinalAudit?.failures ?? [];
+    analysisResult._auditMeta = {
+      iterations: 1,
+      maxIterations: typeof maxIterations === "number" ? Math.max(1, Math.floor(maxIterations)) : 1,
+      finalAuditPass: failures.length === 0,
+      remainingFailures: failures.map((f: any) => ({ criterion: f.code, reason: f.message })),
+    };
 
     return new Response(JSON.stringify(analysisResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
