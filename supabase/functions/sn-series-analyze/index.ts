@@ -182,6 +182,7 @@ export const handler = async (req: Request): Promise<Response> => {
 
     const requested = typeof maxIterations === "number" ? Math.floor(maxIterations) : 3;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requested));
+    const MAX_OUTPUT_TOKENS = 32768;
     let analysisResult: any = null;
     let lastFailures: any[] = [];
     let iterationsRun = 0;
@@ -201,6 +202,9 @@ export const handler = async (req: Request): Promise<Response> => {
           messages,
           tools: [toolDefinition],
           tool_choice: { type: "function", function: { name: "sn_visit_series" } },
+          temperature: 0.2,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          parallel_tool_calls: false,
         }),
       });
 
@@ -226,15 +230,39 @@ export const handler = async (req: Request): Promise<Response> => {
       }
 
       const data = await response.json();
-      const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-      if (!toolCall) {
+      const parsed = parseStructuredAnalysis(data, "sn_visit_series");
+      if (!parsed) {
+        const finishReason = getFinishReason(data);
+        console.error("sn-series-analyze: missing structured tool call", {
+          finishReason,
+          hasAssistantContent: Boolean(getAssistantContent(data)),
+        });
+
+        if (iteration < MAX_AUDIT_ITERATIONS) {
+          messages.push({
+            role: "assistant",
+            content: "Prior response did not call the required sn_visit_series tool.",
+          });
+          messages.push({
+            role: "user",
+            content:
+              "Retry now. You MUST call the sn_visit_series tool exactly once. Do not answer in prose. Keep each narrative clinically specific but concise enough to fit the tool response.",
+          });
+          continue;
+        }
+
+        const tokenLimitHit = ["length", "MAX_TOKENS", "max_tokens"].includes(String(finishReason ?? ""));
         return new Response(
-          JSON.stringify({ error: "AI did not return structured analysis" }),
+          JSON.stringify({
+            error: tokenLimitHit
+              ? "AI response was too large to structure. Try a shorter frequency range or fewer visits."
+              : "AI did not return structured analysis",
+          }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      analysisResult = JSON.parse(toolCall.function.arguments);
+      analysisResult = parsed;
       lastFailures = analysisResult.longitudinalAudit?.failures ?? [];
 
       console.log(
@@ -643,6 +671,61 @@ function buildToolDefinition() {
       },
     },
   };
+}
+
+function getFinishReason(data: any): string | undefined {
+  return data?.choices?.[0]?.finish_reason ?? data?.choices?.[0]?.finishReason;
+}
+
+function getAssistantContent(data: any): string {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === "string" ? part.text : typeof part === "string" ? part : ""))
+      .join("\n")
+      .trim();
+  }
+  return "";
+}
+
+function parseStructuredAnalysis(data: any, expectedToolName: string): any | null {
+  const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+  const toolCall = Array.isArray(toolCalls)
+    ? toolCalls.find((call: any) => call?.function?.name === expectedToolName) ?? toolCalls[0]
+    : null;
+
+  const args = toolCall?.function?.arguments;
+  if (typeof args === "string" && args.trim()) {
+    try {
+      return JSON.parse(args);
+    } catch (error) {
+      console.error("sn-series-analyze: failed to parse tool arguments", error);
+    }
+  }
+
+  const content = getAssistantContent(data);
+  if (!content) return null;
+
+  const jsonText = extractJsonObject(content);
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    return parsed && typeof parsed === "object" && Array.isArray(parsed.visits) ? parsed : null;
+  } catch (error) {
+    console.error("sn-series-analyze: failed to parse assistant JSON fallback", error);
+    return null;
+  }
+}
+
+function extractJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fenced?.[1] ?? text;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return candidate.slice(start, end + 1);
 }
 
 Deno.serve(handler);
