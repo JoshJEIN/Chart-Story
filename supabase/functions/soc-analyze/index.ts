@@ -166,18 +166,25 @@ export const handler = async (req: Request): Promise<Response> => {
     req.headers.get("x-health-check") === "1";
 
   if (!isHealthCheck && req.method === "POST") {
-    const ct = req.headers.get("content-type") ?? "";
-    const cl = Number(req.headers.get("content-length") ?? "0");
-    if (ct.includes("application/json") && cl > 0 && cl < 1024) {
-      try {
+    try {
+      const ct = req.headers.get("content-type") ?? "";
+      const cl = Number(req.headers.get("content-length") ?? "0");
+      if (ct.includes("application/json") && cl > 0 && cl < 256) {
         const cloned = req.clone();
-        const peek = await cloned.json();
-        if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
-          isHealthCheck = true;
+        const peekText = await cloned.text();
+        if (peekText && peekText.trim().length > 0) {
+          try {
+            const peek = JSON.parse(peekText);
+            if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
+              isHealthCheck = true;
+            }
+          } catch {
+            // not JSON, not a health check
+          }
         }
-      } catch {
-        // ignore
       }
+    } catch {
+      // ignore — peek failed, continue to main handler
     }
   }
 
