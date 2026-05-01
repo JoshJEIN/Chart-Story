@@ -337,6 +337,114 @@ function buildDeterministicSnSeries(
   };
 }
 
+function normalizePlanOfCare(plan: any): any {
+  return {
+    primaryDx: plan?.primaryDx || "Primary diagnosis from SOC analysis",
+    secondaryDx: Array.isArray(plan?.secondaryDx) ? plan.secondaryDx : [],
+    homeboundJustification: plan?.homeboundJustification || "Patient requires taxing effort and assistance/supervision to leave home safely.",
+    skilledNeedRationale: plan?.skilledNeedRationale || "Skilled nursing required for assessment, medication teaching, disease-process education, coordination of care, and safety monitoring.",
+    measurableGoals: Array.isArray(plan?.measurableGoals) && plan.measurableGoals.length > 0
+      ? plan.measurableGoals
+      : ["Patient/caregiver will verbalize medication regimen, red flags, diet/activity precautions, and when to contact physician."],
+    disciplineOrders: Array.isArray(plan?.disciplineOrders) ? plan.disciplineOrders : [],
+    dmeSupplies: plan?.dmeSupplies || "DME/supplies per SOC/POC documentation.",
+  };
+}
+
+function buildEducationTopics(socResult: any): any[] {
+  const plan = normalizePlanOfCare(socResult?.planOfCare);
+  const rawTopics = Array.isArray(socResult?.educationPlan) ? socResult.educationPlan : [];
+  const seeded = rawTopics.slice(0, 8).map((t: any, idx: number) => ({
+    id: `edu-${idx + 1}`,
+    topic: t?.topic || `Disease management teaching ${idx + 1}`,
+    linkedDxOrMed: t?.linkedDiagnosisOrMed || t?.linkedDxOrMed || plan.primaryDx,
+    level: idx < 3 ? "basic" : idx < 6 ? "intermediate" : "advanced",
+    prerequisiteIds: idx > 2 ? [`edu-${Math.max(1, idx - 2)}`] : [],
+    teachBackQuestions: Array.isArray(t?.teachBackQuestions) && t.teachBackQuestions.length > 0
+      ? t.teachBackQuestions
+      : ["What symptom or medication concern should make you call the nurse or physician?"],
+    teachingScript: [
+      t?.whyItMatters,
+      t?.fullExplanation,
+      t?.dietaryGuidance ? `Diet: ${t.dietaryGuidance}` : "",
+      t?.medGuidance ? `Medication: ${t.medGuidance}` : "",
+      Array.isArray(t?.signsToWatch) && t.signsToWatch.length ? `Report: ${t.signsToWatch.join(", ")}` : "",
+    ].filter(Boolean).join(" ") || `Explain why ${t?.topic || "this topic"} matters to the patient's condition, medication safety, diet, activity tolerance, and prevention of avoidable hospitalization.`,
+  }));
+
+  const fallbacks = [
+    { topic: `${plan.primaryDx} disease process and red flags`, linkedDxOrMed: plan.primaryDx, level: "basic" },
+    { topic: "Medication purpose, timing, side effects, and missed-dose safety", linkedDxOrMed: "Medication regimen", level: "basic" },
+    { topic: "Low-sodium/diagnosis-specific diet and hydration choices", linkedDxOrMed: plan.primaryDx, level: "intermediate" },
+    { topic: "Home safety, fall prevention, energy conservation, and emergency plan", linkedDxOrMed: "Homebound/safety", level: "intermediate" },
+    { topic: "When to contact physician versus emergency services", linkedDxOrMed: plan.primaryDx, level: "advanced" },
+  ];
+
+  while (seeded.length < 6) {
+    const f = fallbacks[seeded.length % fallbacks.length];
+    seeded.push({
+      id: `edu-${seeded.length + 1}`,
+      topic: f.topic,
+      linkedDxOrMed: f.linkedDxOrMed,
+      level: f.level,
+      prerequisiteIds: seeded.length > 1 ? [`edu-${seeded.length - 1}`] : [],
+      teachBackQuestions: ["Tell me the main step you will take at home and when you would call for help."],
+      teachingScript: `Teach ${f.topic} in relation to the patient's diagnosis, medications, diet/activity limits, safety risks, and prevention of worsening symptoms or hospitalization.`,
+    });
+  }
+  return seeded;
+}
+
+function buildServerEducationLog(topics: any[], visits: any[]): any[] {
+  return topics.map((topic) => {
+    const touched = visits.filter((v) => (v.educationDelivered ?? []).some((ed: any) => ed.topicId === topic.id));
+    const mastered = touched.find((v) => (v.educationDelivered ?? []).some((ed: any) => ed.topicId === topic.id && ed.masteryReached));
+    return {
+      topicId: topic.id,
+      topic: topic.topic,
+      level: topic.level,
+      firstTaught: touched[0]?.visitId ?? null,
+      reinforcedAt: touched.slice(1).map((v) => v.visitId),
+      masteredAt: mastered?.visitId ?? null,
+      advancedToTopicId: topics.find((t) => t.linkedDxOrMed === topic.linkedDxOrMed && t.level !== topic.level)?.id ?? null,
+    };
+  }).filter((entry) => entry.firstTaught);
+}
+
+function buildEpisodeSummary(period: 1 | 2, visits: any[], threshold: number | null, sourceDoc: string): any {
+  const periodVisits = visits.filter((v) => v.pdgmPeriod === period);
+  const lupaRisk = threshold == null ? "unknown" : periodVisits.length < threshold ? "below" : periodVisits.length === threshold ? "at" : "above";
+  const lupaImpactNote = threshold == null
+    ? "LUPA threshold not supplied; user should verify HHRG-specific threshold."
+    : lupaRisk === "below"
+      ? `Below LUPA threshold (${periodVisits.length}/${threshold}); missed/low visit volume may affect payment and continuity.`
+      : lupaRisk === "at"
+        ? `At LUPA threshold (${threshold}); one missed visit may create LUPA risk.`
+        : `Above LUPA threshold (${periodVisits.length}/${threshold}); planned utilization supports continuity.`;
+  return {
+    period,
+    visitsCompleted: periodVisits.length,
+    visitsScheduled: periodVisits.length,
+    lupaThreshold: threshold,
+    lupaRisk,
+    lupaImpactNote,
+    progress: period === 1 ? "stable" : "improved",
+    keyInterventions: period === 1
+      ? [`F2F/POC source linked from ${sourceDoc}.`, "Initial skilled assessment, medication reconciliation, disease education, and safety plan initiated."]
+      : ["Teaching advanced with teach-back, medication adherence reinforced, and functional/safety monitoring continued."],
+    remainingNeeds: ["Continue skilled assessment, education reinforcement, medication monitoring, homebound/safety review, and physician coordination as indicated."],
+  };
+}
+
+function initialsFromName(name: string | undefined): string {
+  return String(name ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
 function buildUserMessage(
   socResult: any,
   visitSlots: VisitSlot[],
