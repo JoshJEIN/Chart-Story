@@ -198,7 +198,7 @@ export const handler = async (req: Request): Promise<Response> => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
+          model: "google/gemini-2.5-flash",
           messages,
           tools: [toolDefinition],
           tool_choice: { type: "function", function: { name: "sn_visit_series" } },
