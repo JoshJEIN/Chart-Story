@@ -673,4 +673,59 @@ function buildToolDefinition() {
   };
 }
 
+function getFinishReason(data: any): string | undefined {
+  return data?.choices?.[0]?.finish_reason ?? data?.choices?.[0]?.finishReason;
+}
+
+function getAssistantContent(data: any): string {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === "string" ? part.text : typeof part === "string" ? part : ""))
+      .join("\n")
+      .trim();
+  }
+  return "";
+}
+
+function parseStructuredAnalysis(data: any, expectedToolName: string): any | null {
+  const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+  const toolCall = Array.isArray(toolCalls)
+    ? toolCalls.find((call: any) => call?.function?.name === expectedToolName) ?? toolCalls[0]
+    : null;
+
+  const args = toolCall?.function?.arguments;
+  if (typeof args === "string" && args.trim()) {
+    try {
+      return JSON.parse(args);
+    } catch (error) {
+      console.error("sn-series-analyze: failed to parse tool arguments", error);
+    }
+  }
+
+  const content = getAssistantContent(data);
+  if (!content) return null;
+
+  const jsonText = extractJsonObject(content);
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    return parsed && typeof parsed === "object" && Array.isArray(parsed.visits) ? parsed : null;
+  } catch (error) {
+    console.error("sn-series-analyze: failed to parse assistant JSON fallback", error);
+    return null;
+  }
+}
+
+function extractJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fenced?.[1] ?? text;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return candidate.slice(start, end + 1);
+}
+
 Deno.serve(handler);
