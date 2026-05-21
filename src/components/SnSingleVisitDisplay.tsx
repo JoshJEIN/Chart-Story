@@ -6,9 +6,11 @@ import {
   AlertTriangle,
   Sparkles,
   FileText,
+  Download,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Accordion,
   AccordionContent,
@@ -19,6 +21,103 @@ import type { SnSingleVisitDraft } from "@/types/snVisitDraft";
 
 interface Props {
   draft: SnSingleVisitDraft;
+}
+
+function escapeHtml(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function buildDocHtml(draft: SnSingleVisitDraft): string {
+  const v = draft.visit;
+  const showVitals = draft.mode === "quick";
+  const o = v.objective as any;
+  const vitalsRows: Array<[string, any]> = !showVitals
+    ? []
+    : ([
+        ["Time", o?.timestamp],
+        ["BP", o?.bp],
+        ["HR", o?.hr],
+        ["RR", o?.rr],
+        ["SpO2", o?.spo2 != null ? `${o.spo2}%` : undefined],
+        ["Temp", o?.temp],
+        ["Weight", o?.weight],
+        ["FSBG", o?.fsbg],
+        ["Pain", o?.painScore],
+        ["Edema", o?.edema],
+        ["Lung sounds", o?.lungSounds],
+        ["Ambulation", o?.ambulationDistanceFt ? `${o.ambulationDistanceFt} ft` : undefined],
+        ["Transfer", o?.transferAssist],
+      ].filter(([, val]) => val !== undefined && val !== null && val !== "") as Array<[string, any]>);
+
+  const section = (title: string, body?: string) =>
+    body
+      ? `<h2 style="font-size:13pt;margin:14pt 0 4pt;border-bottom:1px solid #999;">${escapeHtml(title)}</h2><p style="white-space:pre-wrap;">${escapeHtml(body)}</p>`
+      : "";
+
+  const list = (title: string, items?: string[]) =>
+    items?.length
+      ? `<h2 style="font-size:13pt;margin:14pt 0 4pt;border-bottom:1px solid #999;">${escapeHtml(title)}</h2><ol>${items
+          .map((i) => `<li style="margin-bottom:6pt;">${escapeHtml(i)}</li>`)
+          .join("")}</ol>`
+      : "";
+
+  const eduHtml = v.educationDelivered?.length
+    ? `<h2 style="font-size:13pt;margin:14pt 0 4pt;border-bottom:1px solid #999;">Education Delivered</h2>` +
+      v.educationDelivered
+        .map(
+          (e: any) =>
+            `<p><strong>${escapeHtml(e.topic ?? e.topicId)}</strong> — ${escapeHtml(e.comprehensionPct)}% ${e.masteryReached ? "(mastered)" : ""}</p><p style="white-space:pre-wrap;margin:0 0 8pt;">${escapeHtml(e.response)}</p>`,
+        )
+        .join("")
+    : "";
+
+  const vitalsHtml = vitalsRows.length
+    ? `<h2 style="font-size:13pt;margin:14pt 0 4pt;border-bottom:1px solid #999;">Objective</h2><table style="border-collapse:collapse;"><tbody>${vitalsRows
+        .map(
+          ([k, val]) =>
+            `<tr><td style="padding:2pt 12pt 2pt 0;color:#555;">${escapeHtml(k)}</td><td style="padding:2pt 0;">${escapeHtml(val)}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+    : "";
+
+  const goalsHtml = v.goalsProgress?.length
+    ? `<h2 style="font-size:13pt;margin:14pt 0 4pt;border-bottom:1px solid #999;">Goals Progress</h2><ul>${v.goalsProgress
+        .map(
+          (g: any) =>
+            `<li><strong>${escapeHtml(g.goalRef)}</strong> — ${escapeHtml(g.status)}<br/><span style="color:#555;">${escapeHtml(g.evidence)}</span></li>`,
+        )
+        .join("")}</ul>`
+    : "";
+
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>SN Visit Note ${escapeHtml(v.visitDate)}</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111;">
+<h1 style="font-size:18pt;margin-bottom:0;">Skilled Nursing Visit Note</h1>
+<p style="margin-top:2pt;color:#555;">${escapeHtml(v.visitDate)} &middot; ${escapeHtml(v.visitType)}</p>
+${section("Subjective", v.subjective)}
+${vitalsHtml}
+${section("Assessment", v.assessment)}
+${list("Planned Interventions", v.plannedInterventions)}
+${eduHtml}
+${v.coordinationOfCare ? section("Coordination of Care", v.coordinationOfCare) : ""}
+${goalsHtml}
+${section("Next Visit Focus", v.nextVisitFocus)}
+${section("Homebound (visit-specific)", v.homeboundRestated)}
+</body></html>`;
+}
+
+function downloadDraft(draft: SnSingleVisitDraft) {
+  const html = buildDocHtml(draft);
+  const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `sn-visit-${draft.visit.visitDate || "draft"}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export default function SnSingleVisitDisplay({ draft }: Props) {
@@ -40,6 +139,9 @@ export default function SnSingleVisitDisplay({ draft }: Props) {
               <div className="flex items-center gap-2">
                 <Badge variant="outline">{v.visitDate}</Badge>
                 <Badge variant="secondary">{v.visitType}</Badge>
+                <Button size="sm" variant="outline" onClick={() => downloadDraft(draft)}>
+                  <Download className="h-4 w-4" /> Download
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -88,7 +190,6 @@ export default function SnSingleVisitDisplay({ draft }: Props) {
               )}
             </div>
 
-            <Section title="Skilled Justification" body={v.skilledJustification} />
             {v.coordinationOfCare && (
               <Section title="Coordination of Care" body={v.coordinationOfCare} />
             )}
@@ -200,11 +301,11 @@ function ListSection({
   return (
     <div>
       <SectionHeader icon={icon} title={title} />
-      <ul className="mt-1 list-disc ml-5 text-sm space-y-0.5">
+      <ol className="mt-1 list-decimal ml-5 text-sm space-y-2">
         {items.map((it, i) => (
-          <li key={i}>{it}</li>
+          <li key={i} className="leading-relaxed">{it}</li>
         ))}
-      </ul>
+      </ol>
     </div>
   );
 }
