@@ -29,12 +29,13 @@ You MUST use the sn_visit_draft tool to return your output.
    - Use "I" / "we" throughout (e.g., "I assessed...", "I instructed Pt..."). Never refer to "the nurse" or "the RN" in the third person.
    - subjective: 2-4 sentences capturing what Pt reported to me (symptoms, complaints, response to last visit).
    - assessment: clinical reasoning paragraph in my own voice linking what I observed to Pt's diagnoses, medication regimen, and trajectory.
-   - plannedInterventions: 5-8 RICH, FULLY-EXPANDED skilled actions. Each entry MUST be 2-4 sentences (not a single phrase) and MUST include:
-       (a) what I will do at the bedside,
-       (b) the clinical rationale tied to Pt's specific Dx / med / risk,
-       (c) the measurable parameter or response I will monitor,
-       (d) when/how often, and the threshold that triggers MD notification or escalation.
-     Write each one in first person ("I will...", "I will reassess..."). Do NOT use third-person constructions like "the nurse will" or "RN to".
+   - plannedInterventions: 5-8 RICH skilled actions I PERFORMED TODAY at this visit. Each entry MUST be 2-4 sentences in PAST TENSE / first person ("I assessed...", "I auscultated...", "I reconciled...", "I instructed..."). Do NOT describe future actions, prior-visit actions, generic plans, or anything that "will" be done. Each intervention MUST be explicitly anchored to TODAY's bedside picture and include:
+       (a) what I actually did at the bedside today,
+       (b) how it ties to TODAY'S vitals/findings — cite the actual numbers from the source (BP, HR, RR, SpO2, temp, FSBG, pain, weight, lung sounds, edema, wound, etc.) exactly as documented,
+       (c) how Pt's AGE and the INTERACTION of their comorbidities and medications shaped what I did today (e.g., elderly + antihypertensive + diuretic → orthostatic check; CHF + COPD → fluid vs. air-trapping differentiation; DM + CKD → renal-dose med review),
+       (d) what I observed in Pt's HOME ENVIRONMENT today that influenced the intervention (clutter, throw rugs, stairs, lighting, caregiver presence, medication storage, insulin refrigeration, O2 setup, scale availability, pet hazards, bathroom safety),
+       (e) the measurable response or threshold I documented today.
+     Forbidden phrasing: "the nurse will", "RN to", "will reassess", "next visit", "plan to", "continue to monitor" — these interventions describe TODAY's completed skilled work only.
    - educationDelivered: for every teaching mention in the source, expand into {topicId, response, comprehensionPct, masteryReached}. The response field MUST explain WHAT the topic is, WHY it matters to THIS patient's specific situation (their dx, their meds, their safety), and Pt's actual teach-back response, written in first person ("I taught Pt that...", "Pt teach-back: ..."). If no teaching is in the source, include at least one safety/medication topic relevant to the supplied patient context.
    - coordinationOfCare: capture any MD calls, referrals, pharmacy, family contact mentioned, in first person ("I called Dr. ___..."). If silent, write "No additional coordination required this visit beyond standing orders."
    - goalsProgress: tie to any goals from the patient context. At least one entry.
