@@ -507,8 +507,9 @@ export const handler = async (req: Request): Promise<Response> => {
     const requestedMax =
       typeof maxIterations === "number" && Number.isFinite(maxIterations)
         ? Math.floor(maxIterations)
-        : 3;
-    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requestedMax));
+        : 1;
+    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
+    const AI_REQUEST_TIMEOUT_MS = 75_000;
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -517,19 +518,35 @@ export const handler = async (req: Request): Promise<Response> => {
       iterationsRun = iteration;
       console.log(`soc-analyze: audit iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
 
-      const response = await fetch(AI_GATEWAY_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages,
-          tools: [toolDefinition],
-          tool_choice: { type: "function", function: { name: "soc_analysis" } },
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(AI_GATEWAY_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-lite",
+            messages,
+            tools: [toolDefinition],
+            tool_choice: { type: "function", function: { name: "soc_analysis" } },
+          }),
+        });
+      } catch (fetchErr) {
+        if (fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
+          return new Response(
+            JSON.stringify({ error: "Admission analysis timed out while generating. Try fewer or shorter documents." }),
+            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         if (response.status === 429) {
