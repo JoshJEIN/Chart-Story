@@ -202,8 +202,8 @@ export const handler = async (req: Request): Promise<Response> => {
 
   try {
     const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024;
-    const PER_DOC_CHAR_CAP = 80_000;
-    const TOTAL_DOC_CHAR_CAP = 600_000;
+    const PER_DOC_CHAR_CAP = 45_000;
+    const TOTAL_DOC_CHAR_CAP = 180_000;
 
     const contentLengthHeader = req.headers.get("content-length");
     if (contentLengthHeader) {
@@ -335,7 +335,7 @@ export const handler = async (req: Request): Promise<Response> => {
       )
       .join("\n");
 
-    const userMessage = `Analyze the following ADMISSION / Start-of-Care packet. Build a Medicare-compliant admission care plan, first SN visit note template, and patient/caregiver education plan from these documents.\n\nCRITICAL GROUNDING RULES:\n- Use ONLY facts that appear verbatim or are directly inferable from the document text below.\n- Every diagnosis, medication, date, lab value, and historical item MUST be traceable to a specific DOCUMENT N / File: <name>.\n- If a required field cannot be supported by the source text, write "[NOT DOCUMENTED]" and surface a red flag — do NOT fabricate, do NOT use prior knowledge of typical home-health patients.\n- Patient identifier must be derived from the actual document text or filenames provided; if absent use "Unknown_Pt".\n\nDOCUMENTS:\n\n${docSections}`;
+    const userMessage = `Analyze the following ADMISSION / Start-of-Care packet. Build a Medicare-compliant admission care plan, first SN visit note template, and patient/caregiver education plan from these documents.\n\nCRITICAL GROUNDING RULES:\n- Use ONLY facts that appear verbatim or are directly inferable from the document text below.\n- Every diagnosis, medication, date, lab value, and historical item MUST be traceable to a specific DOCUMENT N / File: <name>.\n- If a required field cannot be supported by the source text, write "[NOT DOCUMENTED]" and surface a red flag — do NOT fabricate, do NOT use prior knowledge of typical home-health patients.\n- Patient identifier must be derived from the actual document text or filenames provided; if absent use "Unknown_Pt".\n\nTIMEOUT-SAFE OUTPUT LIMITS:\n- Be complete but concise: max 4 education topics, max 6 goals, max 8 planned interventions, max 10 red flags, and max 15 source-table rows.\n- Prioritize high-risk diagnoses, medications, vitals, functional limits, homebound drivers, and skilled-need evidence.\n- Do not repeat the same source citation in every sentence; use sourceTable for traceability.\n\nDOCUMENTS:\n\n${docSections}`;
 
     const toolDefinition = {
       type: "function",
