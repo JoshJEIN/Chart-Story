@@ -153,6 +153,42 @@ Explicitly reference in your analysis when present:
 - Doctor / specialist / SOAP notes
 - Labs, imaging, referrals`;
 
+const CLINICAL_KEYWORDS = [
+  "admission", "assessment", "diagnosis", "dx", "problem", "vital", "blood pressure", "pulse", "spo2", "respiration",
+  "temperature", "weight", "pain", "medication", "allerg", "order", "frequency", "duration", "plan", "goal", "intervention",
+  "skilled", "nursing", "homebound", "face to face", "f2f", "oasis", "485", "poc", "copd", "hypertension", "diabetes",
+  "chf", "ckd", "wound", "fall", "gait", "ambulat", "transfer", "adl", "iadl", "caregiver", "environment", "safety",
+  "lab", "imaging", "hospital", "discharge", "ed visit", "shortness", "dyspnea", "edema", "lung", "oxygen", "nebulizer",
+];
+
+function compactClinicalText(rawText: string, maxChars: number): string {
+  const text = rawText.replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+  if (text.length <= maxChars) return text;
+
+  const lead = text.slice(0, Math.min(5_000, Math.floor(maxChars * 0.25)));
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  const budget = maxChars - lead.length - 400;
+  let used = 0;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (!CLINICAL_KEYWORDS.some((keyword) => lower.includes(keyword))) continue;
+    const key = lower.slice(0, 220);
+    if (seen.has(key)) continue;
+    if (used + line.length + 1 > budget) break;
+    seen.add(key);
+    kept.push(line);
+    used += line.length + 1;
+  }
+
+  return `${lead}\n\n[DOCUMENT COMPACTED FOR TIMEOUT PREVENTION — retained beginning plus high-yield clinical lines.]\n${kept.join("\n")}`.slice(0, maxChars);
+}
+
 export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
