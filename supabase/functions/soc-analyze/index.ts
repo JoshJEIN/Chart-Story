@@ -238,8 +238,8 @@ export const handler = async (req: Request): Promise<Response> => {
 
   try {
     const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024;
-    const PER_DOC_CHAR_CAP = 45_000;
-    const TOTAL_DOC_CHAR_CAP = 180_000;
+    const PER_DOC_CHAR_CAP = 18_000;
+    const TOTAL_DOC_CHAR_CAP = 90_000;
 
     const contentLengthHeader = req.headers.get("content-length");
     if (contentLengthHeader) {
@@ -314,7 +314,7 @@ export const handler = async (req: Request): Promise<Response> => {
       let runningTotal = 0;
       documents = rawDocuments.map((d: any) => {
         if (!d || typeof d.text !== "string") return d;
-        let text = d.text;
+        let text = compactClinicalText(d.text, PER_DOC_CHAR_CAP);
         let truncated = false;
         if (text.length > PER_DOC_CHAR_CAP) {
           text = text.slice(0, PER_DOC_CHAR_CAP);
