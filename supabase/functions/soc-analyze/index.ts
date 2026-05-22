@@ -153,6 +153,42 @@ Explicitly reference in your analysis when present:
 - Doctor / specialist / SOAP notes
 - Labs, imaging, referrals`;
 
+const CLINICAL_KEYWORDS = [
+  "admission", "assessment", "diagnosis", "dx", "problem", "vital", "blood pressure", "pulse", "spo2", "respiration",
+  "temperature", "weight", "pain", "medication", "allerg", "order", "frequency", "duration", "plan", "goal", "intervention",
+  "skilled", "nursing", "homebound", "face to face", "f2f", "oasis", "485", "poc", "copd", "hypertension", "diabetes",
+  "chf", "ckd", "wound", "fall", "gait", "ambulat", "transfer", "adl", "iadl", "caregiver", "environment", "safety",
+  "lab", "imaging", "hospital", "discharge", "ed visit", "shortness", "dyspnea", "edema", "lung", "oxygen", "nebulizer",
+];
+
+function compactClinicalText(rawText: string, maxChars: number): string {
+  const text = rawText.replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+  if (text.length <= maxChars) return text;
+
+  const lead = text.slice(0, Math.min(5_000, Math.floor(maxChars * 0.25)));
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  const budget = maxChars - lead.length - 400;
+  let used = 0;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (!CLINICAL_KEYWORDS.some((keyword) => lower.includes(keyword))) continue;
+    const key = lower.slice(0, 220);
+    if (seen.has(key)) continue;
+    if (used + line.length + 1 > budget) break;
+    seen.add(key);
+    kept.push(line);
+    used += line.length + 1;
+  }
+
+  return `${lead}\n\n[DOCUMENT COMPACTED FOR TIMEOUT PREVENTION — retained beginning plus high-yield clinical lines.]\n${kept.join("\n")}`.slice(0, maxChars);
+}
+
 export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -202,8 +238,8 @@ export const handler = async (req: Request): Promise<Response> => {
 
   try {
     const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024;
-    const PER_DOC_CHAR_CAP = 80_000;
-    const TOTAL_DOC_CHAR_CAP = 600_000;
+    const PER_DOC_CHAR_CAP = 18_000;
+    const TOTAL_DOC_CHAR_CAP = 90_000;
 
     const contentLengthHeader = req.headers.get("content-length");
     if (contentLengthHeader) {
@@ -278,7 +314,7 @@ export const handler = async (req: Request): Promise<Response> => {
       let runningTotal = 0;
       documents = rawDocuments.map((d: any) => {
         if (!d || typeof d.text !== "string") return d;
-        let text = d.text;
+        let text = compactClinicalText(d.text, PER_DOC_CHAR_CAP);
         let truncated = false;
         if (text.length > PER_DOC_CHAR_CAP) {
           text = text.slice(0, PER_DOC_CHAR_CAP);
@@ -335,7 +371,7 @@ export const handler = async (req: Request): Promise<Response> => {
       )
       .join("\n");
 
-    const userMessage = `Analyze the following ADMISSION / Start-of-Care packet. Build a Medicare-compliant admission care plan, first SN visit note template, and patient/caregiver education plan from these documents.\n\nCRITICAL GROUNDING RULES:\n- Use ONLY facts that appear verbatim or are directly inferable from the document text below.\n- Every diagnosis, medication, date, lab value, and historical item MUST be traceable to a specific DOCUMENT N / File: <name>.\n- If a required field cannot be supported by the source text, write "[NOT DOCUMENTED]" and surface a red flag — do NOT fabricate, do NOT use prior knowledge of typical home-health patients.\n- Patient identifier must be derived from the actual document text or filenames provided; if absent use "Unknown_Pt".\n\nDOCUMENTS:\n\n${docSections}`;
+    const userMessage = `Analyze the following ADMISSION / Start-of-Care packet. Build a Medicare-compliant admission care plan, first SN visit note template, and patient/caregiver education plan from these documents.\n\nCRITICAL GROUNDING RULES:\n- Use ONLY facts that appear verbatim or are directly inferable from the document text below.\n- Every diagnosis, medication, date, lab value, and historical item MUST be traceable to a specific DOCUMENT N / File: <name>.\n- If a required field cannot be supported by the source text, write "[NOT DOCUMENTED]" and surface a red flag — do NOT fabricate, do NOT use prior knowledge of typical home-health patients.\n- Patient identifier must be derived from the actual document text or filenames provided; if absent use "Unknown_Pt".\n\nTIMEOUT-SAFE OUTPUT LIMITS:\n- Be complete but concise: max 4 education topics, max 6 goals, max 8 planned interventions, max 10 red flags, and max 15 source-table rows.\n- Prioritize high-risk diagnoses, medications, vitals, functional limits, homebound drivers, and skilled-need evidence.\n- Do not repeat the same source citation in every sentence; use sourceTable for traceability.\n\nDOCUMENTS:\n\n${docSections}`;
 
     const toolDefinition = {
       type: "function",
@@ -507,8 +543,9 @@ export const handler = async (req: Request): Promise<Response> => {
     const requestedMax =
       typeof maxIterations === "number" && Number.isFinite(maxIterations)
         ? Math.floor(maxIterations)
-        : 3;
-    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(10, requestedMax));
+        : 1;
+    const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
+    const AI_REQUEST_TIMEOUT_MS = 75_000;
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -517,19 +554,35 @@ export const handler = async (req: Request): Promise<Response> => {
       iterationsRun = iteration;
       console.log(`soc-analyze: audit iteration ${iteration}/${MAX_AUDIT_ITERATIONS}`);
 
-      const response = await fetch(AI_GATEWAY_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages,
-          tools: [toolDefinition],
-          tool_choice: { type: "function", function: { name: "soc_analysis" } },
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(AI_GATEWAY_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-lite",
+            messages,
+            tools: [toolDefinition],
+            tool_choice: { type: "function", function: { name: "soc_analysis" } },
+          }),
+        });
+      } catch (fetchErr) {
+        if (fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
+          return new Response(
+            JSON.stringify({ error: "Admission analysis timed out while generating. Try fewer or shorter documents." }),
+            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         if (response.status === 429) {
