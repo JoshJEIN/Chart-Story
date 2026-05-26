@@ -576,7 +576,7 @@ export function generateSocAuditQAJSON(result: SocAnalysisResult): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.txt$/, ".json");
+  a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.docx$/, ".json");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
