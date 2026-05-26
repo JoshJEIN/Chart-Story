@@ -297,11 +297,16 @@ function sanitizeForFilename(s: string): string {
   return (s || "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "Unknown";
 }
 
+// App-wide filename prefix that appears on every downloadable deliverable.
+const APP_TAG = "CStoryApp";
+
 function buildFilename(prefix: string, result: AnalysisResult): string {
-  const pt = sanitizeForFilename(result.patientIdentifier || "Unknown_Pt");
+  const name = sanitizeForFilename(
+    (result as any).patientFullName || result.patientIdentifier || "Unknown_Pt",
+  );
   const ep = sanitizeForFilename(result.episodeRange || "Episode_Unknown");
   const gen = formatFileDate(result.generatedAt);
-  return `${prefix}_${pt}_${ep}_generated_${gen}.txt`;
+  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.txt`;
 }
 
 function downloadTextFile(content: string, filename: string) {
@@ -324,18 +329,22 @@ const SOC_MAJOR = "=".repeat(70);
 const SOC_MINOR = "-".repeat(70);
 
 function buildSocFilename(prefix: string, result: SocAnalysisResult): string {
-  const pt = sanitizeForFilename(result.patientFullName || result.patientIdentifier || "Unknown_Pt");
+  const name = sanitizeForFilename(
+    result.patientFullName || result.patientIdentifier || "Unknown_Pt",
+  );
   const ep = sanitizeForFilename(result.episodeInfo?.episodeLabel || "Episode_SOC");
   const gen = formatFileDate(result.generatedAt);
-  return `${prefix}_${pt}_${ep}_generated_${gen}.txt`;
+  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.txt`;
 }
 
 function socHeader(title: string, result: SocAnalysisResult): string[] {
+  const fullName = result.patientFullName || "(name not documented)";
   return [
     SOC_MAJOR,
-    title,
+    `${APP_TAG} — ${title}`,
+    `Patient: ${fullName}`,
     SOC_MAJOR,
-    `Patient: ${result.patientIdentifier || "Unknown"}`,
+    `Patient ID: ${result.patientIdentifier || "Unknown"}`,
     `Episode: ${result.episodeInfo?.episodeLabel || "—"}`,
     `Cert Period: ${result.episodeInfo?.certPeriodDates || "—"}`,
     `Generated: ${result.generatedAt.toLocaleDateString()}`,
