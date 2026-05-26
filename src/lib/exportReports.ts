@@ -548,18 +548,22 @@ const SN_MAJOR = "=".repeat(70);
 const SN_MINOR = "-".repeat(70);
 
 function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "txt"): string {
-  const pt = sanitizeForFilename(result.patientFullName || result.patientIdentifier || "Unknown_Pt");
+  const name = sanitizeForFilename(
+    result.patientFullName || result.patientIdentifier || "Unknown_Pt",
+  );
   const start = result.certPeriod?.startDate ?? "unknown_start";
   const gen = formatFileDate(result.generatedAt);
-  return `${prefix}_${pt}_cert_${start}_generated_${gen}.${ext}`;
+  return `${APP_TAG}_${prefix}_${name}_cert_${start}_generated_${gen}.${ext}`;
 }
 
 function snHeader(title: string, result: SnSeriesResult): string[] {
+  const fullName = result.patientFullName || "(name not documented)";
   return [
     SN_MAJOR,
-    title,
+    `${APP_TAG} — ${title}`,
+    `Patient: ${fullName}`,
     SN_MAJOR,
-    `Patient: ${result.patientIdentifier || "Unknown"}`,
+    `Patient ID: ${result.patientIdentifier || "Unknown"}`,
     `Cert Period: ${result.certPeriod?.startDate ?? "—"} → ${result.certPeriod?.endDate ?? "—"} (60 days)`,
     `Frequency Order: ${result.frequencyOrder?.raw ?? "—"} (${result.frequencyOrder?.totalVisitsScheduled ?? 0} SN visits)`,
     `Generated: ${result.generatedAt.toLocaleDateString()}`,
