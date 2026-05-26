@@ -1,4 +1,5 @@
 import { UploadedDocument } from "@/types/pcr";
+import { supabase } from "@/integrations/supabase/client";
 
 // PDF.js — use the legacy build for broad browser support and configure the worker
 // from the same package so Vite bundles it correctly.
@@ -10,6 +11,9 @@ import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
 const MAX_CHARS_PER_DOC = 60_000; // ~15k tokens — large enough for most clinical packets
+const OCR_MAX_PAGES = 12;
+const OCR_RENDER_SCALE = 2.0; // higher = better OCR, slower
+const OCR_JPEG_QUALITY = 0.85;
 
 export interface ExtractedDoc {
   category: string;
@@ -46,8 +50,20 @@ export async function extractTextFromDocuments(
         text = await extractPdfText(doc.file);
         ok = text.trim().length > 0;
         if (!ok) {
-          note =
-            "PDF contained no extractable text (likely a scanned image). OCR is required — re-export this document as text-based PDF or upload a typed version.";
+          // Scanned PDF — fall back to OCR via edge function.
+          try {
+            const ocrText = await ocrPdfViaEdge(doc.file);
+            if (ocrText.trim().length > 0) {
+              text = ocrText;
+              ok = true;
+              note = "Scanned PDF — text extracted via OCR.";
+            } else {
+              note =
+                "PDF appears to be a scanned image and OCR returned no text. Try a clearer scan or a typed version.";
+            }
+          } catch (ocrErr) {
+            note = `Scanned PDF; OCR failed: ${ocrErr instanceof Error ? ocrErr.message : String(ocrErr)}`;
+          }
         }
       } else if (
         lower.endsWith(".docx") ||
@@ -69,6 +85,17 @@ export async function extractTextFromDocuments(
       } else if (lower.endsWith(".doc")) {
         note =
           "Legacy .doc format is not supported in-browser. Save the file as .docx or .pdf and re-upload.";
+      } else if (
+        mime.startsWith("image/") ||
+        /\.(png|jpe?g|webp|heic|bmp|gif)$/i.test(lower)
+      ) {
+        try {
+          text = await ocrImageViaEdge(doc.file);
+          ok = text.trim().length > 0;
+          if (!ok) note = "OCR returned no text for this image.";
+        } catch (ocrErr) {
+          note = `Image OCR failed: ${ocrErr instanceof Error ? ocrErr.message : String(ocrErr)}`;
+        }
       } else {
         // Unknown — try plain text as last resort, but validate it looks like text
         const raw = await doc.file.text();
@@ -76,7 +103,7 @@ export async function extractTextFromDocuments(
           text = raw;
           ok = text.trim().length > 0;
         } else {
-          note = `Unsupported or binary file format (${mime || "unknown"}). Upload PDF (text-based), DOCX, XLSX, TXT, or CSV.`;
+          note = `Unsupported or binary file format (${mime || "unknown"}). Upload PDF, DOCX, XLSX, TXT, CSV, or an image (PNG/JPG).`;
         }
       }
     } catch (err) {
@@ -103,7 +130,6 @@ async function extractPdfText(file: File): Promise<string> {
   const data = await file.arrayBuffer();
   const pdf = await (pdfjsLib as any).getDocument({
     data,
-    // Disable worker fetch fallbacks that can break in some sandboxes
     isEvalSupported: false,
     useSystemFonts: true,
   }).promise;
@@ -134,11 +160,6 @@ async function extractXlsxText(file: File): Promise<string> {
   return out.join("\n\n");
 }
 
-/**
- * Heuristic: a string is "readable" if it contains a reasonable ratio of
- * printable ASCII characters. Binary blobs read as text are dominated by
- * control bytes and replacement characters.
- */
 function looksLikeReadableText(s: string): boolean {
   if (!s || s.length < 20) return false;
   const sample = s.slice(0, 2000);
@@ -148,4 +169,64 @@ function looksLikeReadableText(s: string): boolean {
     if ((c >= 32 && c < 127) || c === 9 || c === 10 || c === 13) printable++;
   }
   return printable / sample.length > 0.85;
+}
+
+// ──────────────────────────── OCR fallback ────────────────────────────
+
+async function ocrPdfViaEdge(file: File): Promise<string> {
+  const data = await file.arrayBuffer();
+  const pdf = await (pdfjsLib as any).getDocument({
+    data,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  }).promise;
+
+  const pages: { base64: string; mimeType: string }[] = [];
+  const total = Math.min(pdf.numPages, OCR_MAX_PAGES);
+  for (let i = 1; i <= total; i++) {
+    const page = await pdf.getPage(i);
+    const dataUrl = await renderPdfPageToDataUrl(page);
+    const base64 = dataUrl.split(",")[1] || "";
+    pages.push({ base64, mimeType: "image/jpeg" });
+  }
+
+  return await callOcrEdge(pages);
+}
+
+async function renderPdfPageToDataUrl(page: any): Promise<string> {
+  const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas.toDataURL("image/jpeg", OCR_JPEG_QUALITY);
+}
+
+async function ocrImageViaEdge(file: File): Promise<string> {
+  const dataUrl = await fileToDataUrl(file);
+  const base64 = dataUrl.split(",")[1] || "";
+  const mimeType = file.type || "image/png";
+  return await callOcrEdge([{ base64, mimeType }]);
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("FileReader error"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callOcrEdge(
+  pages: { base64: string; mimeType: string }[],
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("ocr-document", {
+    body: { pages },
+  });
+  if (error) throw new Error(error.message || "OCR edge function failed");
+  const text = (data as any)?.text;
+  return typeof text === "string" ? text : "";
 }
