@@ -8,5 +8,7 @@ export interface SnSingleVisitDraft {
   addedFields: string[];
   provenanceNotes: string;
   inputExcerpt: string;
+  patientIdentifier?: string;
+  patientFullName?: string;
   generatedAt: string;
 }
