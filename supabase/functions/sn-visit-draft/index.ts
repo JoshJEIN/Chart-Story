@@ -237,6 +237,8 @@ export const handler = async (req: Request): Promise<Response> => {
         addedFields: parsed.addedFields ?? [],
         provenanceNotes: parsed.provenanceNotes ?? "",
         inputExcerpt: sourceExcerpt ?? "",
+        patientIdentifier: patientIdentifier ?? "",
+        patientFullName: patientFullName ?? "",
         generatedAt: new Date().toISOString(),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
