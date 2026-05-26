@@ -92,9 +92,14 @@ function buildDocHtml(draft: SnSingleVisitDraft): string {
         .join("")}</ul>`
     : "";
 
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>SN Visit Note ${escapeHtml(v.visitDate)}</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111;">
-<h1 style="font-size:18pt;margin-bottom:0;">Skilled Nursing Visit Note</h1>
-<p style="margin-top:2pt;color:#555;">${escapeHtml(v.visitDate)} &middot; ${escapeHtml(v.visitType)}</p>
+  const fullName = draft.patientFullName || "(name not documented)";
+  const titleLabel =
+    draft.mode === "quick" ? "Quick SN Visit Note" : "Recert Narrative SN Visit Note";
+
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>CStoryApp — ${escapeHtml(titleLabel)} — ${escapeHtml(fullName)} — ${escapeHtml(v.visitDate)}</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#111;">
+<h1 style="font-size:18pt;margin-bottom:0;">CStoryApp — ${escapeHtml(titleLabel)}</h1>
+<h2 style="font-size:14pt;margin:2pt 0 0;">${escapeHtml(fullName)}</h2>
+<p style="margin-top:2pt;color:#555;">${escapeHtml(v.visitDate)} &middot; ${escapeHtml(v.visitType)}${draft.patientIdentifier ? ` &middot; ID: ${escapeHtml(draft.patientIdentifier)}` : ""}</p>
 ${section("Subjective", v.subjective)}
 ${vitalsHtml}
 ${section("Assessment", v.assessment)}
@@ -107,13 +112,20 @@ ${section("Homebound (visit-specific)", v.homeboundRestated)}
 </body></html>`;
 }
 
+function sanitizeFn(s: string): string {
+  return (s || "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "Unknown";
+}
+
 function downloadDraft(draft: SnSingleVisitDraft) {
   const html = buildDocHtml(draft);
   const blob = new Blob(["\ufeff", html], { type: "application/msword" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `sn-visit-${draft.visit.visitDate || "draft"}.doc`;
+  const modeTag = draft.mode === "quick" ? "Quick_SN_Visit" : "Recert_SN_Visit";
+  const name = sanitizeFn(draft.patientFullName || draft.patientIdentifier || "Unknown_Pt");
+  const date = draft.visit.visitDate || "draft";
+  a.download = `CStoryApp_${modeTag}_${name}_${date}.doc`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
