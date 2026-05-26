@@ -1,5 +1,6 @@
 import { AnalysisResult } from "@/types/pcr";
 import { SocAnalysisResult } from "@/types/soc";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   new: "New",
@@ -239,7 +240,7 @@ export function generateAuditQAJSON(result: AnalysisResult): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = buildFilename("PCR_Audit_QA", result).replace(/\.txt$/, ".json");
+  a.download = buildFilename("PCR_Audit_QA", result).replace(/\.docx$/, ".json");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -314,19 +315,63 @@ function buildFilename(prefix: string, result: AnalysisResult): string {
   );
   const ep = sanitizeForFilename(result.episodeRange || "Episode_Unknown");
   const gen = formatFileDate(result.generatedAt);
-  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.txt`;
+  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.docx`;
 }
 
+// Convert plain-text "report" lines into a real .docx. Lines that look like
+// section banners (ALL CAPS or '=== / ---' rules) become headings/separators
+// so the doc reads naturally in Word/Google Docs.
 function downloadTextFile(content: string, filename: string) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const rawLines = content.split("\n");
+  const paragraphs: Paragraph[] = rawLines.map((line) => {
+    if (/^[=]{5,}$/.test(line) || /^[-]{5,}$/.test(line)) {
+      return new Paragraph({ children: [new TextRun({ text: "" })] });
+    }
+    const trimmed = line.trim();
+    // Title line (first one with CStoryApp tag) → Heading 1
+    if (/^CStoryApp\s+[—-]/.test(trimmed)) {
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({ text: trimmed, bold: true })],
+      });
+    }
+    // Section header heuristic: ALL CAPS line, no lowercase, short-ish
+    if (
+      trimmed.length > 0 &&
+      trimmed.length < 90 &&
+      trimmed === trimmed.toUpperCase() &&
+      /[A-Z]/.test(trimmed) &&
+      !/^\d/.test(trimmed)
+    ) {
+      return new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({ text: trimmed, bold: true })],
+      });
+    }
+    return new Paragraph({
+      children: [new TextRun({ text: line, font: "Calibri", size: 22 })],
+    });
+  });
+
+  const doc = new Document({
+    creator: "CStoryApp",
+    title: filename,
+    styles: {
+      default: { document: { run: { font: "Calibri", size: 22 } } },
+    },
+    sections: [{ children: paragraphs }],
+  });
+
+  Packer.toBlob(doc).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
 }
 
 // =====================================================================
@@ -342,7 +387,7 @@ function buildSocFilename(prefix: string, result: SocAnalysisResult): string {
   );
   const ep = sanitizeForFilename(result.episodeInfo?.episodeLabel || "Episode_SOC");
   const gen = formatFileDate(result.generatedAt);
-  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.txt`;
+  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.docx`;
 }
 
 function socHeader(title: string, result: SocAnalysisResult): string[] {
@@ -531,7 +576,7 @@ export function generateSocAuditQAJSON(result: SocAnalysisResult): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.txt$/, ".json");
+  a.download = buildSocFilename("SOC_Audit_QA", result).replace(/\.docx$/, ".json");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -547,7 +592,7 @@ import type { SnSeriesResult } from "@/types/snSeries";
 const SN_MAJOR = "=".repeat(70);
 const SN_MINOR = "-".repeat(70);
 
-function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "txt"): string {
+function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "docx"): string {
   const name = sanitizeForFilename(
     result.patientFullName || result.patientIdentifier || "Unknown_Pt",
   );
