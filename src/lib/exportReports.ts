@@ -79,9 +79,11 @@ export function generateDetailedAnalysisPDF(result: AnalysisResult): void {
 export function generatePatientSummaryPDF(result: AnalysisResult): void {
   const lines: string[] = [];
   const date = result.generatedAt.toLocaleDateString();
+  const fullName = (result as any).patientFullName || "(name not documented)";
 
-  lines.push("PATIENT SUMMARY — PCR RECERTIFICATION");
-  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push("CStoryApp — PATIENT SUMMARY — PCR RECERTIFICATION");
+  lines.push(`Patient: ${fullName}`);
+  lines.push(`Patient ID: ${result.patientIdentifier || "Unknown"}`);
   lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
