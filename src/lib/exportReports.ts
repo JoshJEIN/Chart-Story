@@ -1,5 +1,6 @@
 import { AnalysisResult } from "@/types/pcr";
 import { SocAnalysisResult } from "@/types/soc";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   new: "New",
