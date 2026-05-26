@@ -387,7 +387,7 @@ function buildSocFilename(prefix: string, result: SocAnalysisResult): string {
   );
   const ep = sanitizeForFilename(result.episodeInfo?.episodeLabel || "Episode_SOC");
   const gen = formatFileDate(result.generatedAt);
-  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.txt`;
+  return `${APP_TAG}_${prefix}_${name}_${ep}_generated_${gen}.docx`;
 }
 
 function socHeader(title: string, result: SocAnalysisResult): string[] {
