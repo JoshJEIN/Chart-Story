@@ -144,9 +144,11 @@ export default function SnSingleVisitDisplay({ draft }: Props) {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileText className="h-5 w-5 text-accent" />
+                CStoryApp —{" "}
                 {draft.mode === "quick"
                   ? "Quick SN Visit Draft"
                   : "Recert Narrative SN Visit Draft"}
+                {draft.patientFullName ? ` — ${draft.patientFullName}` : ""}
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">{v.visitDate}</Badge>
