@@ -240,7 +240,7 @@ export function generateAuditQAJSON(result: AnalysisResult): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = buildFilename("PCR_Audit_QA", result).replace(/\.txt$/, ".json");
+  a.download = buildFilename("PCR_Audit_QA", result).replace(/\.docx$/, ".json");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
