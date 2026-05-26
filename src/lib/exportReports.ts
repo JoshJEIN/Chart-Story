@@ -249,9 +249,11 @@ export function generateAuditQAJSON(result: AnalysisResult): void {
 export function generateAuditQAReport(result: AnalysisResult): void {
   const lines: string[] = [];
   const date = result.generatedAt.toLocaleDateString();
+  const fullName = (result as any).patientFullName || "(name not documented)";
 
-  lines.push("PCR AUDIT QA REPORT");
-  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push("CStoryApp — PCR AUDIT QA REPORT");
+  lines.push(`Patient: ${fullName}`);
+  lines.push(`Patient ID: ${result.patientIdentifier || "Unknown"}`);
   lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push("=".repeat(70));
