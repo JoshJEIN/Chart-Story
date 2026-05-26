@@ -122,14 +122,16 @@ export function generatePatientSummaryPDF(result: AnalysisResult): void {
 export function generateSignificantPastHealthHistoryPDF(result: AnalysisResult): void {
   const lines: string[] = [];
   const date = result.generatedAt.toLocaleDateString();
+  const fullName = (result as any).patientFullName || "(name not documented)";
   const MAJOR = "=".repeat(70);
   const MINOR = "-".repeat(70);
 
   // Header with decorative separators
   lines.push(MAJOR);
-  lines.push("SIGNIFICANT PAST HEALTH HISTORY — OASIS RECERTIFICATION");
+  lines.push("CStoryApp — SIGNIFICANT PAST HEALTH HISTORY — OASIS RECERTIFICATION");
+  lines.push(`Patient: ${fullName}`);
   lines.push(MAJOR);
-  lines.push(`Patient: ${result.patientIdentifier || "Unknown"}`);
+  lines.push(`Patient ID: ${result.patientIdentifier || "Unknown"}`);
   lines.push(`Episode Analyzed: ${result.episodeRange || "Unknown"}`);
   lines.push(`Generated: ${date}`);
   lines.push(MAJOR);
