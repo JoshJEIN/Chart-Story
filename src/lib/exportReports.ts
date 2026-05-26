@@ -592,7 +592,7 @@ import type { SnSeriesResult } from "@/types/snSeries";
 const SN_MAJOR = "=".repeat(70);
 const SN_MINOR = "-".repeat(70);
 
-function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "txt"): string {
+function buildSnFilename(prefix: string, result: SnSeriesResult, ext = "docx"): string {
   const name = sanitizeForFilename(
     result.patientFullName || result.patientIdentifier || "Unknown_Pt",
   );
