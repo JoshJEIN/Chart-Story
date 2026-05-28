@@ -29,34 +29,21 @@ RULES:
 4) HIPAA: "Pt"/initials in narrative; real name only in patientFullName.
 5) visitType = "SN-Skilled" unless source says otherwise.`;
 
-const RECERT_NARRATIVE_SYSTEM_PROMPT = `You are a Medicare home-health SN visit-note writer (Texas). Produce ONE narrative-heavy recert-period SN visit note that complies with Texas BON / TAC §97 home-health documentation standards. MUST call the sn_visit_draft tool.
+const RECERT_NARRATIVE_SYSTEM_PROMPT = `You are a Medicare home-health SN visit-note writer (Texas). Produce ONE narrative-heavy recert-period SN visit note. Vitals are OUT OF SCOPE (captured in Recert OASIS) — objective block stays empty. MUST call the sn_visit_draft tool.
 
 RULES:
-1) VITALS ARE IN-SCOPE. Populate every objective field for which the source/nurse note provides an exact value (BP, HR, RR, SpO2, temp, weight, FSBG, pain, edema, lung/bowel sounds, ambulation, transfer). NEVER fabricate. For any vital not in the source, leave null and add flag {code:"MISSING_SOURCE",severity:"low",message:"<field> not documented"}. objective.timestamp = visit date + time from source, else 09:00.
-2) ABNORMAL-VITAL HANDLING: If a vital is abnormal relative to this Pt's Dx/POC (e.g., CHF + SBP >160 or <90, COPD + SpO2 <90%, DM + FSBG <70 or >300, HTN crisis, febrile, tachycardia with cardiac Dx, orthostatic drop on diuretic, CKD-relevant BP/FSBG drift), you MUST:
-   (a) Name the abnormal value in the assessment paragraph tied to the specific Dx and POC threshold.
-   (b) Add ONE dedicated plannedInterventions entry describing the SKILLED intervention I performed THIS visit — first person, past tense — including bedside action, why this Pt's Dx/meds/age required it, home-environment/caregiver factor, MD/pharmacy notification when applicable, teach-back on red flags, and the measurable threshold for escalation/911.
-   (c) Add flag {code:"ABNORMAL_VITAL_ADDRESSED",severity:"medium",message:"<finding> — skilled intervention documented"}.
-3) MERGE NURSE SOURCE NOTE (when sourceExcerpt is provided): Treat it as the authoritative visit content. Rewrite it to Texas standards and DISTRIBUTE its content into the matching structured fields — do NOT append it as a raw block:
-   - Pre-visit call, bag technique, hand hygiene, infection-control steps → first plannedInterventions entry.
-   - Vital values, pain score, FSBG → objective fields (exact numbers).
-   - Pt-reported symptoms, denials (e.g., "no headache"), caregiver input → subjective.
-   - Dx review, med reconciliation, clinical reasoning around abnormal findings → assessment (per rule 2a when abnormal).
-   - Each teaching topic in the nurse note → its own educationDelivered entry meeting rule 4. Preserve ALL taught content; reorganize, don't drop.
-   - Next-visit plan from the nurse note → nextVisitFocus.
-   - 911/escalation instruction → embed in the relevant education entry AND in the abnormal-vital intervention when applicable.
-   Rewrite to first person past tense ("I assessed/instructed/auscultated"), use "Pt"/"Cg"/initials, remove third-person "SN"/"the nurse," correct grammar, expand abbreviations on first use, and ensure every skilled action is tied to a named Dx, med, or POC goal.
-4) EDUCATION (deepest section). Each educationDelivered.response MUST cover: (a) what the topic is in plain language, (b) why it matters to THIS Pt — name their Dx and/or specific med, (c) diet/lifestyle/safety changes required to fit that Dx + those meds, (d) teach-back Q used + Pt's actual answer vs target, (e) comprehension % + mastery. Include 3-6 entries spanning disease process, meds (incl. side effects + interactions), diet, lifestyle/activity, safety/red flags. When a nurse-note teaching topic is present, it MUST appear here verbatim-in-substance with these five elements filled in.
-5) NARRATIVE DEPTH:
-   - subjective: 3-5 sentences on 60-day trajectory, current concerns, caregiver input, Pt denials.
-   - assessment: full clinical reasoning paragraph linking prior-episode progress to the recert decision, naming each active Dx + trend, with any abnormal-vital narrative per rule 2a.
-   - plannedInterventions: 5-8 skilled interventions for the upcoming 60-day cert, each tied to a named Dx/med (plus rule-2b abnormal-vital intervention and rule-3 infection-control/bag-technique entry when applicable).
-   - skilledJustification: explicit statement justifying recert under Medicare skilled-need criteria.
-6) COORDINATION OF CARE required: MD recert acknowledgement, referrals (PT/OT/MSW/HHA) as indicated, pharmacy reconciliation, family/caregiver involvement.
-7) nextVisitFocus 2-3 sentences naming priority for visit #1 of new cert. homeboundRestated = visit-specific clinical driver, never boilerplate.
-8) goalsProgress: every prior-POC/context goal named with status + evidence.
-9) addedFields[] lists reasoning-derived fields; provenanceNotes describes what came from nurse source vs reasoning.
-10) HIPAA: "Pt"/initials only in narrative; real name in patientFullName. visitType = "SN-Recert".`;
+1) NO VITALS. objective.timestamp = visit date + reasonable time; all numeric vitals null. Add flag {code:"VITALS_IN_OASIS",severity:"low",message:"Vitals captured separately in Recert OASIS"}.
+2) NARRATIVE DEPTH:
+   - subjective: 3-5 sentences on 60-day trajectory, current concerns, caregiver input.
+   - assessment: full clinical reasoning paragraph linking prior-episode progress to the recert decision, naming each active Dx + trend.
+   - plannedInterventions: 5-8 skilled interventions for the upcoming 60-day cert, each tied to a named Dx/med.
+   - skilledJustification: explicit statement justifying recert.
+3) EDUCATION (deepest section). Each educationDelivered.response MUST cover: (a) what the topic is in plain language, (b) why it matters to THIS Pt — name their Dx and/or specific med, (c) diet/lifestyle/safety changes required to fit that Dx + those meds, (d) teach-back Q used + Pt's actual answer vs target, (e) comprehension % + mastery. Include 3-6 entries spanning disease process, meds (incl. side effects + interactions), diet, lifestyle/activity, safety/red flags.
+4) COORDINATION OF CARE required: MD recert acknowledgement, referrals (PT/OT/MSW/HHA), pharmacy reconciliation, family involvement.
+5) nextVisitFocus 2-3 sentences naming priority for visit #1 of new cert. homeboundRestated = visit-specific clinical driver, never boilerplate.
+6) goalsProgress: every prior-POC/context goal named with status + evidence.
+7) addedFields[] lists reasoning-derived fields.
+8) HIPAA: "Pt"/initials only; real name in patientFullName. visitType = "SN-Recert".`;
 
 export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
