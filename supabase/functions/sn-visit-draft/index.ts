@@ -56,12 +56,22 @@ export const handler = async (req: Request): Promise<Response> => {
     url.searchParams.get("health") === "1" ||
     req.headers.get("x-health-check") === "1";
 
+
+  let rawBody = "";
   if (!isHealthCheck && req.method === "POST") {
+    try {
+      rawBody = await req.text();
+    } catch (e) {
+      console.error("body read error:", e);
+      return new Response(
+        JSON.stringify({ error: "Failed to read request body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     const ct = req.headers.get("content-type") ?? "";
-    const cl = Number(req.headers.get("content-length") ?? "0");
-    if (ct.includes("application/json") && cl > 0 && cl < 1024) {
+    if (ct.includes("application/json") && rawBody.length > 0 && rawBody.length < 1024) {
       try {
-        const peek = await req.clone().json();
+        const peek = JSON.parse(rawBody);
         if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
           isHealthCheck = true;
         }
@@ -82,7 +92,8 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const body = await req.json();
+    const body = rawBody ? JSON.parse(rawBody) : {};
+
     const {
       mode,
       visitDate,
