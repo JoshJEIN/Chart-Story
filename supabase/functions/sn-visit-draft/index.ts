@@ -56,18 +56,6 @@ export const handler = async (req: Request): Promise<Response> => {
     url.searchParams.get("health") === "1" ||
     req.headers.get("x-health-check") === "1";
 
-  if (!isHealthCheck && req.method === "POST") {
-    const ct = req.headers.get("content-type") ?? "";
-    const cl = Number(req.headers.get("content-length") ?? "0");
-    if (ct.includes("application/json") && cl > 0 && cl < 1024) {
-      try {
-        const peek = await req.clone().json();
-        if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
-          isHealthCheck = true;
-        }
-      } catch { /* ignore */ }
-    }
-  }
 
   let rawBody = "";
   if (!isHealthCheck && req.method === "POST") {
