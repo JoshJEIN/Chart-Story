@@ -566,7 +566,7 @@ export const handler = async (req: Request): Promise<Response> => {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash-lite",
+            model: "google/gemini-2.5-flash",
             messages,
             tools: [toolDefinition],
             tool_choice: { type: "function", function: { name: "soc_analysis" } },
