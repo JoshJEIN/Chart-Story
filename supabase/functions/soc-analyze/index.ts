@@ -201,26 +201,50 @@ export const handler = async (req: Request): Promise<Response> => {
     url.searchParams.get("health") === "1" ||
     req.headers.get("x-health-check") === "1";
 
+  const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024;
+
+  let rawBody = "";
   if (!isHealthCheck && req.method === "POST") {
-    try {
-      const ct = req.headers.get("content-type") ?? "";
-      const cl = Number(req.headers.get("content-length") ?? "0");
-      if (ct.includes("application/json") && cl > 0 && cl < 256) {
-        const cloned = req.clone();
-        const peekText = await cloned.text();
-        if (peekText && peekText.trim().length > 0) {
-          try {
-            const peek = JSON.parse(peekText);
-            if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
-              isHealthCheck = true;
-            }
-          } catch {
-            // not JSON, not a health check
-          }
-        }
+    const contentLengthHeader = req.headers.get("content-length");
+    if (contentLengthHeader) {
+      const declared = parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(declared) && declared > MAX_PAYLOAD_BYTES) {
+        return new Response(
+          JSON.stringify({
+            error: `Payload too large (${(declared / 1024 / 1024).toFixed(1)} MB). The maximum is ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB. Analyze fewer or smaller documents per run.`,
+          }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-    } catch {
-      // ignore — peek failed, continue to main handler
+    }
+
+    try {
+      rawBody = await req.text();
+    } catch (readErr) {
+      console.error("soc-analyze: failed to read request body", readErr);
+      return new Response(
+        JSON.stringify({ error: "Failed to read request body. Try again with fewer documents." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      return new Response(
+        JSON.stringify({
+          error: `Payload exceeded the ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB limit.`,
+        }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const ct = req.headers.get("content-type") ?? "";
+    if (ct.includes("application/json") && rawBody.length > 0 && rawBody.length < 256) {
+      try {
+        const peek = JSON.parse(rawBody);
+        if (peek && (peek.health === 1 || peek.health === "1" || peek.health === true)) {
+          isHealthCheck = true;
+        }
+      } catch { /* ignore */ }
     }
   }
 
@@ -237,57 +261,8 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024;
     const PER_DOC_CHAR_CAP = 18_000;
     const TOTAL_DOC_CHAR_CAP = 90_000;
-
-    const contentLengthHeader = req.headers.get("content-length");
-    if (contentLengthHeader) {
-      const declared = parseInt(contentLengthHeader, 10);
-      if (Number.isFinite(declared) && declared > MAX_PAYLOAD_BYTES) {
-        return new Response(
-          JSON.stringify({
-            error: `Payload too large (${(declared / 1024 / 1024).toFixed(1)} MB). The maximum is ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB. Analyze fewer or smaller documents per run.`,
-          }),
-          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-
-    let rawBody = "";
-    try {
-      const reader = req.body?.getReader();
-      if (!reader) {
-        rawBody = await req.text();
-      } else {
-        const decoder = new TextDecoder();
-        let received = 0;
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (value) {
-            received += value.byteLength;
-            if (received > MAX_PAYLOAD_BYTES) {
-              try { await reader.cancel(); } catch (_) { /* noop */ }
-              return new Response(
-                JSON.stringify({
-                  error: `Payload exceeded the ${(MAX_PAYLOAD_BYTES / 1024 / 1024).toFixed(0)} MB limit while uploading.`,
-                }),
-                { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-              );
-            }
-            rawBody += decoder.decode(value, { stream: true });
-          }
-        }
-        rawBody += decoder.decode();
-      }
-    } catch (readErr) {
-      console.error("soc-analyze: failed to read request body", readErr);
-      return new Response(
-        JSON.stringify({ error: "Failed to read request body. Try again with fewer documents." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     if (!rawBody || rawBody.trim().length === 0) {
       return new Response(
@@ -295,6 +270,7 @@ export const handler = async (req: Request): Promise<Response> => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     let body: any;
     try {
