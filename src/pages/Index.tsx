@@ -841,6 +841,53 @@ export default function Index() {
             </Button>
           </div>
 
+          {/* Processing Status */}
+          {processingStage !== "idle" && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto w-full max-w-md rounded-lg border bg-card p-4 shadow-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="mb-3 text-sm font-medium text-foreground">Processing Status</p>
+              <ul className="space-y-2 text-sm">
+                {([
+                  { key: "analyzing", label: "Analyzing clinical documents..." },
+                  { key: "generating", label: "Generating deliverables..." },
+                  { key: "complete", label: "Analysis complete!" },
+                ] as const).map((step) => {
+                  const order = { analyzing: 0, generating: 1, complete: 2 } as const;
+                  const current = order[processingStage as keyof typeof order];
+                  const idx = order[step.key];
+                  const status = idx < current ? "done" : idx === current ? "active" : "pending";
+                  return (
+                    <li key={step.key} className="flex items-center gap-2">
+                      {status === "done" || (step.key === "complete" && processingStage === "complete") ? (
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                      ) : status === "active" ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-muted-foreground/40" />
+                      )}
+                      <span
+                        className={
+                          status === "pending"
+                            ? "text-muted-foreground"
+                            : "text-foreground"
+                        }
+                      >
+                        {step.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </motion.div>
+          )}
+
+
+
           {/* Results */}
           {recertResult && (
             <>
