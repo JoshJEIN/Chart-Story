@@ -566,7 +566,7 @@ export const handler = async (req: Request): Promise<Response> => {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash-lite",
+            model: "google/gemini-2.5-flash",
             messages,
             tools: [toolDefinition],
             tool_choice: { type: "function", function: { name: "soc_analysis" } },
@@ -606,15 +606,34 @@ export const handler = async (req: Request): Promise<Response> => {
       }
 
       const data = await response.json();
-      const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-      if (!toolCall) {
+      const message = data.choices?.[0]?.message;
+      const toolCall = message?.tool_calls?.[0];
+      let rawArgs: string | undefined = toolCall?.function?.arguments;
+
+      // Fallback: some models return JSON in content instead of tool_calls
+      if (!rawArgs && typeof message?.content === "string" && message.content.trim()) {
+        const content = message.content.trim();
+        const match = content.match(/\{[\s\S]*\}/);
+        if (match) rawArgs = match[0];
+      }
+
+      if (!rawArgs) {
+        console.error("AI returned no structured output:", JSON.stringify(data).slice(0, 1000));
         return new Response(
           JSON.stringify({ error: "AI did not return structured analysis" }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      analysisResult = JSON.parse(toolCall.function.arguments);
+      try {
+        analysisResult = JSON.parse(rawArgs);
+      } catch (parseErr) {
+        console.error("Failed to parse AI JSON:", parseErr, rawArgs.slice(0, 500));
+        return new Response(
+          JSON.stringify({ error: "AI returned malformed analysis JSON" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       lastAuditFailures = Array.isArray(analysisResult.auditFailures)
         ? analysisResult.auditFailures
         : [];
