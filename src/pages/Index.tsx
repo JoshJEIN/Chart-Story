@@ -146,6 +146,7 @@ export default function Index() {
       return;
     }
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setDraftResult(null);
     try {
       // If documents are uploaded, extract their text and prepend to the source excerpt.
