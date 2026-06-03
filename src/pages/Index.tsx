@@ -228,8 +228,10 @@ export default function Index() {
     }
     const certPeriod = buildCertPeriod(socStartDate);
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setSeriesResult(null);
     try {
+      setProcessingStage("generating");
       const result = await analyzeSnVisitSeries(socResult, certPeriod, freq, {
         maxIterations,
         lupaThresholds: {
@@ -242,8 +244,10 @@ export default function Index() {
           : null,
       });
       setSeriesResult(result);
+      setProcessingStage("complete");
       toast({ title: "SN visit series generated", description: `${result.visits?.length ?? 0} visit notes ready for review.` });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "SN series generation failed",
         description: err.message || "An unexpected error occurred.",
