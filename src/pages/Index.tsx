@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack, Settings2, Activity, CalendarRange } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2, Activity, CalendarRange, CheckCircle2, Circle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -39,6 +39,7 @@ export default function Index() {
   const [draftResult, setDraftResult] = useState<SnSingleVisitDraft | null>(null);
   const [pastedPriorSeriesJson, setPastedPriorSeriesJson] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [processingStage, setProcessingStage] = useState<"idle" | "analyzing" | "generating" | "complete">("idle");
   const [maxIterations, setMaxIterations] = useState<number>(3);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
@@ -80,6 +81,7 @@ export default function Index() {
 
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
+    setProcessingStage("idle");
     setMode(next);
     const isDraft = next === "snQuickDraft" || next === "snRecertDraft";
     // Keep socResult when entering snSeries (it consumes it).
@@ -145,6 +147,7 @@ export default function Index() {
       return;
     }
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setDraftResult(null);
     try {
       // If documents are uploaded, extract their text and prepend to the source excerpt.
@@ -170,6 +173,7 @@ export default function Index() {
         ? `Primary Dx: ${socResult.planOfCare?.primaryDx ?? ""}\nSecondary Dx: ${(socResult.planOfCare?.secondaryDx ?? []).join(", ")}\nGoals: ${(socResult.planOfCare?.measurableGoals ?? []).join("; ")}`
         : draftPatientContext.trim();
 
+      setProcessingStage("generating");
       const result = await analyzeSnVisitDraft({
         mode: draftMode,
         visitDate: draftVisitDate,
@@ -182,8 +186,10 @@ export default function Index() {
         patientFullName: draftPatientName.trim() || socResult?.patientFullName,
       });
       setDraftResult(result);
+      setProcessingStage("complete");
       toast({ title: "Draft generated", description: `${result.addedFields?.length ?? 0} field(s) expanded by AI — review before billing.` });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Draft generation failed",
         description: err.message || "An unexpected error occurred.",
@@ -223,8 +229,10 @@ export default function Index() {
     }
     const certPeriod = buildCertPeriod(socStartDate);
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setSeriesResult(null);
     try {
+      setProcessingStage("generating");
       const result = await analyzeSnVisitSeries(socResult, certPeriod, freq, {
         maxIterations,
         lupaThresholds: {
@@ -237,8 +245,10 @@ export default function Index() {
           : null,
       });
       setSeriesResult(result);
+      setProcessingStage("complete");
       toast({ title: "SN visit series generated", description: `${result.visits?.length ?? 0} visit notes ready for review.` });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "SN series generation failed",
         description: err.message || "An unexpected error occurred.",
@@ -285,6 +295,7 @@ export default function Index() {
 
     const certPeriod = buildCertPeriod(socStartDate);
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setRecertSeriesResult(null);
 
     try {
@@ -308,6 +319,7 @@ export default function Index() {
         .filter((d) => d.ok)
         .map((d) => ({ name: d.name, text: d.text ?? "" }));
 
+      setProcessingStage("generating");
       const result = await analyzeRecertVisitSeries(readable, certPeriod, freq, {
         maxIterations,
         lupaThresholds: {
@@ -320,11 +332,13 @@ export default function Index() {
         priorSeries,
       });
       setRecertSeriesResult(result);
+      setProcessingStage("complete");
       toast({
         title: "Recert visit series generated",
         description: `${result.visits?.length ?? 0} visit notes • ${result.educationDropped?.length ?? 0} mastered topic(s) dropped • ${result.educationCarriedForward?.length ?? 0} carried forward.`,
       });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Recert series generation failed",
         description: err.message || "An unexpected error occurred.",
@@ -362,6 +376,7 @@ export default function Index() {
     }
 
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setRecertResult(null);
     if (mode === "soc") setSocResult(null);
 
@@ -387,6 +402,7 @@ export default function Index() {
 
       const readable = extracted.filter((d) => d.ok);
 
+      setProcessingStage("generating");
       if (mode === "recert") {
         const result = await analyzeDocuments(readable, { maxIterations });
         setRecertResult(result);
@@ -394,8 +410,10 @@ export default function Index() {
         const result = await analyzeAdmissionDocuments(readable, { maxIterations });
         setSocResult(result);
       }
+      setProcessingStage("complete");
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Analysis failed",
         description: err.message || "An unexpected error occurred.",
@@ -822,6 +840,53 @@ export default function Index() {
               Check Edge Function Health
             </Button>
           </div>
+
+          {/* Processing Status */}
+          {processingStage !== "idle" && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto w-full max-w-md rounded-lg border bg-card p-4 shadow-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="mb-3 text-sm font-medium text-foreground">Processing Status</p>
+              <ul className="space-y-2 text-sm">
+                {([
+                  { key: "analyzing", label: "Analyzing clinical documents..." },
+                  { key: "generating", label: "Generating deliverables..." },
+                  { key: "complete", label: "Analysis complete!" },
+                ] as const).map((step) => {
+                  const order = { analyzing: 0, generating: 1, complete: 2 } as const;
+                  const current = order[processingStage as keyof typeof order];
+                  const idx = order[step.key];
+                  const status = idx < current ? "done" : idx === current ? "active" : "pending";
+                  return (
+                    <li key={step.key} className="flex items-center gap-2">
+                      {status === "done" || (step.key === "complete" && processingStage === "complete") ? (
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                      ) : status === "active" ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-muted-foreground/40" />
+                      )}
+                      <span
+                        className={
+                          status === "pending"
+                            ? "text-muted-foreground"
+                            : "text-foreground"
+                        }
+                      >
+                        {step.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </motion.div>
+          )}
+
+
 
           {/* Results */}
           {recertResult && (
