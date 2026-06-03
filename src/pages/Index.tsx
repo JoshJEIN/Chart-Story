@@ -375,6 +375,7 @@ export default function Index() {
     }
 
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setRecertResult(null);
     if (mode === "soc") setSocResult(null);
 
@@ -400,6 +401,7 @@ export default function Index() {
 
       const readable = extracted.filter((d) => d.ok);
 
+      setProcessingStage("generating");
       if (mode === "recert") {
         const result = await analyzeDocuments(readable, { maxIterations });
         setRecertResult(result);
@@ -407,8 +409,10 @@ export default function Index() {
         const result = await analyzeAdmissionDocuments(readable, { maxIterations });
         setSocResult(result);
       }
+      setProcessingStage("complete");
       toast({ title: "Analysis complete", description: "Review the results below." });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Analysis failed",
         description: err.message || "An unexpected error occurred.",
