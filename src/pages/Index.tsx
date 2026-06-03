@@ -81,6 +81,7 @@ export default function Index() {
 
   const switchMode = (next: AnalysisMode) => {
     if (isAnalyzing || next === mode) return;
+    setProcessingStage("idle");
     setMode(next);
     const isDraft = next === "snQuickDraft" || next === "snRecertDraft";
     // Keep socResult when entering snSeries (it consumes it).
