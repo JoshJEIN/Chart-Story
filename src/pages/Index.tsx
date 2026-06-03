@@ -294,6 +294,7 @@ export default function Index() {
 
     const certPeriod = buildCertPeriod(socStartDate);
     setIsAnalyzing(true);
+    setProcessingStage("analyzing");
     setRecertSeriesResult(null);
 
     try {
@@ -317,6 +318,7 @@ export default function Index() {
         .filter((d) => d.ok)
         .map((d) => ({ name: d.name, text: d.text ?? "" }));
 
+      setProcessingStage("generating");
       const result = await analyzeRecertVisitSeries(readable, certPeriod, freq, {
         maxIterations,
         lupaThresholds: {
@@ -329,11 +331,13 @@ export default function Index() {
         priorSeries,
       });
       setRecertSeriesResult(result);
+      setProcessingStage("complete");
       toast({
         title: "Recert visit series generated",
         description: `${result.visits?.length ?? 0} visit notes • ${result.educationDropped?.length ?? 0} mastered topic(s) dropped • ${result.educationCarriedForward?.length ?? 0} carried forward.`,
       });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Recert series generation failed",
         description: err.message || "An unexpected error occurred.",
