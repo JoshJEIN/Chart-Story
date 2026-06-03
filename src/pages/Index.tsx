@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, FileStack, Settings2, Activity, CalendarRange } from "lucide-react";
+import { Loader2, Sparkles, FileStack, Settings2, Activity, CalendarRange, CheckCircle2, Circle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
