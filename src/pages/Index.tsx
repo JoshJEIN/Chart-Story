@@ -39,6 +39,7 @@ export default function Index() {
   const [draftResult, setDraftResult] = useState<SnSingleVisitDraft | null>(null);
   const [pastedPriorSeriesJson, setPastedPriorSeriesJson] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [processingStage, setProcessingStage] = useState<"idle" | "analyzing" | "generating" | "complete">("idle");
   const [maxIterations, setMaxIterations] = useState<number>(3);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
