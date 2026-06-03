@@ -172,6 +172,7 @@ export default function Index() {
         ? `Primary Dx: ${socResult.planOfCare?.primaryDx ?? ""}\nSecondary Dx: ${(socResult.planOfCare?.secondaryDx ?? []).join(", ")}\nGoals: ${(socResult.planOfCare?.measurableGoals ?? []).join("; ")}`
         : draftPatientContext.trim();
 
+      setProcessingStage("generating");
       const result = await analyzeSnVisitDraft({
         mode: draftMode,
         visitDate: draftVisitDate,
@@ -184,8 +185,10 @@ export default function Index() {
         patientFullName: draftPatientName.trim() || socResult?.patientFullName,
       });
       setDraftResult(result);
+      setProcessingStage("complete");
       toast({ title: "Draft generated", description: `${result.addedFields?.length ?? 0} field(s) expanded by AI — review before billing.` });
     } catch (err: any) {
+      setProcessingStage("idle");
       toast({
         title: "Draft generation failed",
         description: err.message || "An unexpected error occurred.",
