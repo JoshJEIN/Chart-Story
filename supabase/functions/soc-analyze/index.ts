@@ -487,12 +487,11 @@ export const handler = async (req: Request): Promise<Response> => {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "google/gemini-3.5-flash",
+            model: "google/gemini-2.5-flash",
             messages,
             tools: [optimizedToolDefinition],
             tool_choice: { type: "function", function: { name: "soc_analysis" } },
             temperature: 0.1,
-            max_tokens: 7000,
           }),
         });
       } catch (fetchErr) {
