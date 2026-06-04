@@ -455,7 +455,7 @@ export const handler = async (req: Request): Promise<Response> => {
         ? Math.floor(maxIterations)
         : 1;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
-    const AI_REQUEST_TIMEOUT_MS = 45_000;
+    const AI_REQUEST_TIMEOUT_MS = 12_000;
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
