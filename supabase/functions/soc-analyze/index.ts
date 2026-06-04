@@ -59,6 +59,80 @@ function compactClinicalText(rawText: string, maxChars: number): string {
   return `${lead}\n\n[DOCUMENT COMPACTED FOR TIMEOUT PREVENTION — retained beginning plus high-yield clinical lines.]\n${kept.join("\n")}`.slice(0, maxChars);
 }
 
+function stripDescriptions(value: any): any {
+  if (Array.isArray(value)) return value.map(stripDescriptions);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, any> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key !== "description") out[key] = stripDescriptions(child);
+  }
+  return out;
+}
+
+function buildTimeoutFallbackAnalysis(documents: Array<{ category: string; name: string; text: string }>) {
+  const sources = documents.slice(0, 15).map((d) => ({
+    finding: "Source document included for admission packet review; detailed AI synthesis timed out before completion.",
+    sourceDocument: d.name || "Unknown source",
+    date: "[DATE NOT DOCUMENTED]",
+    category: d.category || "other",
+  }));
+  const docNames = documents.map((d) => d.name).filter(Boolean).slice(0, 6).join(", ") || "uploaded admission documents";
+  const narrative =
+    `Admission packet review included ${docNames}. The automated clinical synthesis did not complete within the safe runtime window, so the chart must be reviewed manually before use. Primary admission diagnosis, secondary diagnoses, medication profile, F2F linkage, and physician orders require source-document confirmation.\n\n` +
+    `Comorbidities and risk clusters were not safely synthesized because the AI generation timed out. Treat all chronic conditions, high-risk medications, abnormal labs, wounds, falls, cardiopulmonary symptoms, diabetes issues, and renal/cognitive risks in the packet as requiring clinician verification before finalizing the plan of care.\n\n` +
+    `Admission baseline, dated hospital or provider events, vitals, labs, imaging, medication changes, and OASIS findings require manual extraction from the uploaded documents. Do not sign or export final SOC content until each required fact is tied back to the source packet.\n\n` +
+    `Functional limitations, homebound status, and skilled nursing need require manual confirmation from OASIS/485/F2F/orders. Skilled nursing may be indicated for admission assessment, medication reconciliation, safety assessment, disease-process teaching, and care coordination only when supported by the source documents.`;
+
+  return {
+    patientIdentifier: "Unknown_Pt",
+    patientFullName: "",
+    episodeInfo: {
+      episodeType: "Start of Care",
+      certPeriodDates: "[DATES NOT DOCUMENTED]",
+      episodeLabel: "SOC admission packet — manual review required",
+    },
+    admissionChartStory: narrative,
+    significantPastHealthHistory: narrative,
+    planOfCare: {
+      primaryDx: "[NOT DOCUMENTED — AI synthesis timed out; verify from OASIS/485/F2F/orders]",
+      secondaryDx: ["[NOT DOCUMENTED — manual chart review required]"],
+      homeboundJustification: "[NOT DOCUMENTED — verify specific clinical drivers such as taxing effort, assistive device use, dyspnea, pain, cognitive/safety risk, or wound/weight-bearing restrictions.]",
+      skilledNeedRationale: "Manual review required. Confirm documented need for SN admission assessment, medication reconciliation/teaching, observation and assessment, wound care, disease-process teaching, glucose/anticoagulation monitoring, or other ordered skilled interventions.",
+      measurableGoals: [
+        "By visit 2, clinician will reconcile medications against source orders and document discrepancies requiring prescriber follow-up.",
+        "By visit 2, clinician will verify homebound drivers and skilled need from OASIS/485/F2F/orders before finalizing the care plan.",
+      ],
+      disciplineOrders: [{ discipline: "SN", frequencyDuration: "[VERIFY FROM ORDERS]", interventions: "Complete SOC assessment, medication reconciliation, safety review, and initial teaching after source-document confirmation." }],
+      dmeSupplies: "[NEEDS CLARIFICATION — verify from source packet]",
+    },
+    firstSnVisitNote: {
+      subjective: "Ask Pt/cg to confirm reason for admission, recent hospitalization/provider visit, current symptoms, pain, appetite, sleep, falls, medication changes, and caregiver support.",
+      objectiveFocus: ["Complete vitals", "Medication reconciliation", "Focused assessment tied to admission diagnoses", "Home safety and fall risk", "Skin/wound check if applicable"],
+      assessment: "SOC baseline requires clinician completion from source documents and visit findings before signing.",
+      plannedInterventions: ["Complete admission assessment", "Reconcile medications", "Verify physician orders", "Assess home safety", "Initiate highest-risk teaching"],
+      teachingTopics: ["Medication safety", "When to call agency/physician or seek emergency care", "Fall prevention"],
+      safetyChecks: ["Emergency contacts", "Medication storage", "Fall hazards", "Assistive device availability"],
+      skilledJustification: "Skilled nursing is required only when source documents confirm a medically necessary skilled assessment, teaching, monitoring, or treatment need.",
+    },
+    educationPlan: [{
+      topic: "Manual-review safety teaching",
+      linkedDiagnosisOrMed: "Admission risks pending source verification",
+      whyItMatters: "The automated synthesis timed out, so the clinician must confirm diagnosis-specific risks before final education is signed.",
+      fullExplanation: "Teach Pt/cg to keep all discharge papers, medication bottles, and physician orders available for the first visit. Review that new or worsening shortness of breath, chest pain, uncontrolled pain, bleeding, fever, confusion, falls, severe weakness, or inability to take medications should be reported promptly or treated as urgent/emergent depending on severity.",
+      signsToWatch: ["Shortness of breath", "Chest pain", "Fever", "Falls", "Confusion", "Medication problems"],
+      dietaryGuidance: "Follow the diet listed in discharge or physician orders until the clinician verifies diagnosis-specific guidance.",
+      medGuidance: "Do not stop, start, or change medications without prescriber direction; keep bottles and discharge lists ready for reconciliation.",
+      teachBackQuestions: ["Which symptoms mean you should call us right away?", "Where are your medication bottles and discharge papers kept?"],
+    }],
+    redFlags: [{ category: "Processing", description: "Admission AI synthesis timed out; generated conservative manual-review fallback instead of final clinical analysis.", severity: "high" }],
+    medicationReconciliation: [],
+    sourceTable: sources,
+    auditPass: false,
+    auditFailures: [{ criterion: "timeout", reason: "AI generation exceeded the safe runtime window; manual source review required." }],
+    _auditMeta: { iterations: 0, maxIterations: 1, finalAuditPass: false, remainingFailures: [{ criterion: "timeout", reason: "AI generation exceeded the safe runtime window; manual source review required." }] },
+  };
+}
+
 export const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
