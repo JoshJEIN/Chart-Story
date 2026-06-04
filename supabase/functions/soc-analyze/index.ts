@@ -466,7 +466,6 @@ export const handler = async (req: Request): Promise<Response> => {
         : 1;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
     const AI_REQUEST_TIMEOUT_MS = 95_000;
-    const optimizedToolDefinition = stripDescriptions(toolDefinition);
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -489,9 +488,8 @@ export const handler = async (req: Request): Promise<Response> => {
           body: JSON.stringify({
             model: "google/gemini-2.5-flash",
             messages,
-            tools: [optimizedToolDefinition],
+            tools: [toolDefinition],
             tool_choice: { type: "function", function: { name: "soc_analysis" } },
-            temperature: 0.1,
           }),
         });
       } catch (fetchErr) {
@@ -522,10 +520,10 @@ export const handler = async (req: Request): Promise<Response> => {
         }
         const errText = await response.text();
         console.error("AI gateway error:", response.status, errText);
-        return new Response(
-          JSON.stringify({ error: "AI analysis failed" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return new Response(JSON.stringify(buildTimeoutFallbackAnalysis(usableDocs)), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const data = await response.json();
