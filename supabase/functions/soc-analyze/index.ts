@@ -205,8 +205,8 @@ export const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const PER_DOC_CHAR_CAP = 18_000;
-    const TOTAL_DOC_CHAR_CAP = 90_000;
+    const PER_DOC_CHAR_CAP = 12_000;
+    const TOTAL_DOC_CHAR_CAP = 48_000;
 
     if (!rawBody || rawBody.trim().length === 0) {
       return new Response(
@@ -465,7 +465,8 @@ export const handler = async (req: Request): Promise<Response> => {
         ? Math.floor(maxIterations)
         : 1;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
-    const AI_REQUEST_TIMEOUT_MS = 75_000;
+    const AI_REQUEST_TIMEOUT_MS = 95_000;
+    const optimizedToolDefinition = stripDescriptions(toolDefinition);
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
@@ -486,18 +487,21 @@ export const handler = async (req: Request): Promise<Response> => {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
+            model: "google/gemini-3.5-flash",
             messages,
-            tools: [toolDefinition],
+            tools: [optimizedToolDefinition],
             tool_choice: { type: "function", function: { name: "soc_analysis" } },
+            temperature: 0.1,
+            max_tokens: 7000,
           }),
         });
       } catch (fetchErr) {
         if (fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
-          return new Response(
-            JSON.stringify({ error: "Admission analysis timed out while generating. Try fewer or shorter documents." }),
-            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+          console.error("soc-analyze: AI generation timed out; returning manual-review fallback");
+          return new Response(JSON.stringify(buildTimeoutFallbackAnalysis(usableDocs)), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
         throw fetchErr;
       } finally {
