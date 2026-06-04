@@ -59,16 +59,6 @@ function compactClinicalText(rawText: string, maxChars: number): string {
   return `${lead}\n\n[DOCUMENT COMPACTED FOR TIMEOUT PREVENTION — retained beginning plus high-yield clinical lines.]\n${kept.join("\n")}`.slice(0, maxChars);
 }
 
-function stripDescriptions(value: any): any {
-  if (Array.isArray(value)) return value.map(stripDescriptions);
-  if (!value || typeof value !== "object") return value;
-  const out: Record<string, any> = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (key !== "description") out[key] = stripDescriptions(child);
-  }
-  return out;
-}
-
 function buildTimeoutFallbackAnalysis(documents: Array<{ category: string; name: string; text: string }>) {
   const sources = documents.slice(0, 15).map((d) => ({
     finding: "Source document included for admission packet review; detailed AI synthesis timed out before completion.",
@@ -465,7 +455,7 @@ export const handler = async (req: Request): Promise<Response> => {
         ? Math.floor(maxIterations)
         : 1;
     const MAX_AUDIT_ITERATIONS = Math.max(1, Math.min(2, requestedMax));
-    const AI_REQUEST_TIMEOUT_MS = 95_000;
+    const AI_REQUEST_TIMEOUT_MS = 45_000;
     let analysisResult: any = null;
     let lastAuditFailures: Array<{ criterion: string; reason: string }> = [];
     let iterationsRun = 0;
